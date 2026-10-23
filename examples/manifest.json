@@ -1,0 +1,59 @@
+[
+  {
+    "id": "gc",
+    "title": "How garbage collection (mark and sweep) works",
+    "sub": "Start from the things your program can reach, mark everything they touch, then sweep away whatever was never marked. Each step is one object.",
+    "tags": [
+      "memory",
+      "runtime",
+      "languages"
+    ]
+  },
+  {
+    "id": "git",
+    "title": "Git merge vs rebase",
+    "sub": "Same starting point, two ways to bring main's work into your branch. Watch what happens to the history, the commit hashes, and the conflicts.",
+    "tags": [
+      "git",
+      "version-control",
+      "tools"
+    ]
+  },
+  {
+    "id": "hashtable",
+    "title": "How a hash table grows",
+    "sub": "Keys land in buckets by hash. When the table gets crowded it doubles and re-hashes everything, which is what keeps lookups fast.",
+    "tags": [
+      "data structures",
+      "performance"
+    ]
+  },
+  {
+    "id": "raft",
+    "title": "How a Raft leader election works",
+    "sub": "Every node starts as a follower with a random timer. The first timer to expire asks for votes; whoever collects a majority becomes leader and keeps everyone calm with heartbeats.",
+    "tags": [
+      "distributed systems",
+      "consensus"
+    ]
+  },
+  {
+    "id": "tcp",
+    "title": "How TCP congestion control works",
+    "sub": "A sender can't see the network, so it probes: double fast, then creep up, and halve the moment packets get dropped. Each step here is one round trip.",
+    "tags": [
+      "networking",
+      "protocols"
+    ]
+  },
+  {
+    "id": "tls",
+    "title": "How an HTTPS (TLS) handshake works",
+    "sub": "Two strangers agree on a secret key in public, the server proves who it is with a certificate, and then everything is encrypted. Tiny numbers here, same idea as the real thing.",
+    "tags": [
+      "security",
+      "networking",
+      "cryptography"
+    ]
+  }
+]

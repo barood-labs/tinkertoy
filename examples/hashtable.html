@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How a hash table grows · tinkertoy</title>
+<meta name="description" content="Keys land in buckets by hash. When the table gets crowded it doubles and re-hashes everything, which is what keeps lookups fast.">
+<style>
+:root{--bg:#0b0e14;--panel:#131826;--panel2:#1a2133;--line:#262f45;--text:#e6eaf3;--mut:#8b96b0;--acc:#6ea8ff;--ok:#4ade80;--bad:#ff5d6c;--warn:#fbbf24;--pur:#b794f6;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.tt{max-width:1040px;margin:0 auto;padding:18px 14px 40px}
+.tt header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:12px}
+.tt h1{margin:0;font-size:1.45rem;letter-spacing:-.01em}
+.tt .sub{margin:0;color:var(--mut);flex:1 1 280px}
+.tt .back{color:var(--mut);font-size:.85rem;text-decoration:none;margin-right:auto;width:100%}
+.tt .back:hover{color:var(--acc)}
+.stage-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto;overflow-y:hidden;transition:border-color .2s,box-shadow .2s}
+.stage-wrap.broken{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad),0 0 28px rgba(255,93,108,.25)}
+#stage{display:block}
+.badge{position:sticky;left:0;float:right;margin:10px;padding:3px 10px;background:var(--bad);color:#fff;font-weight:700;font-size:.72rem;letter-spacing:.08em;border-radius:99px;z-index:2}
+.badge[hidden]{display:none}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.stat{flex:1 1 110px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:0}
+.stat small{display:block;color:var(--mut);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em}
+.stat b{font-size:1.1rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat.ok b{color:var(--ok)}.stat.bad b{color:var(--bad)}.stat.warn b{color:var(--warn)}
+.caption{min-height:3.1em;margin:6px 0 12px;padding:10px 14px;background:var(--panel2);border-left:3px solid var(--acc);border-radius:6px}
+.caption.bad{border-left-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.timeline #scrub{flex:1 1 220px;min-width:140px}
+#pos{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem;min-width:7.5em;text-align:right}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 13px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:#222c44;border-color:#34415f}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#play{min-width:92px;background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
+#play:hover{background:#8bbaff}
+.controls{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+@media(max-width:760px){.controls{grid-template-columns:1fr}.tt h1{font-size:1.2rem}}
+.params,.breakbox,.learn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.params h2,.breakbox h2,.learn h2{margin:0 0 8px;font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.param{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:8px 0}
+.param label{color:var(--text)}
+.param output{color:var(--acc);font-variant-numeric:tabular-nums;font-weight:600}
+.param input{grid-column:1/-1}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px;margin:0;cursor:pointer}
+#break{width:100%;background:#2a1520;border-color:#5a2535;color:#ffb3bc;font-weight:600;text-align:left}
+#break:hover{background:#3a1b2a}
+#break[aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+#breakinfo{margin:8px 0 0;color:var(--mut);font-size:.88rem}
+.learn{margin-top:14px}
+.learn ul{margin:0;padding-left:1.1em;color:#c3cbe0}.learn li{margin:4px 0}
+.tt footer{margin-top:18px;color:var(--mut);font-size:.8rem}.tt footer a{color:var(--acc)}
+code{background:#1d2540;padding:1px 5px;border-radius:4px;font-size:.88em}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="tt">
+  <header>
+    <a class="back" href="../index.html">← all tinkertoys</a>
+    <h1>How a hash table grows</h1>
+    <p class="sub">Keys land in buckets by hash. When the table gets crowded it doubles and re-hashes everything, which is what keeps lookups fast.</p>
+  </header>
+
+  <section class="stage-wrap" id="stagewrap">
+    <span class="badge" id="badge" hidden>BROKEN</span>
+    <canvas id="stage" role="img" aria-label="A hash table drawn as rows of buckets, each holding a chain of colored key chips"></canvas>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live numbers"></section>
+  <p class="caption" id="caption" aria-live="polite"></p>
+
+  <section class="timeline" aria-label="Playback">
+    <button id="play" type="button">▶ Play</button>
+    <button id="back" type="button" aria-label="Step back">◀</button>
+    <button id="step" type="button" aria-label="Step forward">Step ▶</button>
+    <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Scrub the timeline">
+    <span id="pos"></span>
+    <button id="speed" type="button" aria-label="Playback speed">1×</button>
+  </section>
+
+  <div class="controls">
+    <section class="params" aria-label="Parameters">
+      <h2>Tweak it</h2>
+      <div class="param">
+        <label for="keys">Keys to insert</label><output for="keys"></output>
+        <input type="range" id="keys" data-param min="6" max="24" step="1" value="18">
+      </div>
+      <div class="param">
+        <label for="buckets">Starting buckets</label><output for="buckets"></output>
+        <input type="range" id="buckets" data-param min="2" max="8" step="1" value="4">
+      </div>
+      <div class="param">
+        <label for="load">Resize when load factor exceeds</label><output for="load"></output>
+        <input type="range" id="load" data-param min="0.75" max="2" step="0.25" value="0.75">
+      </div>
+    </section>
+    <section class="breakbox" aria-label="Failure mode">
+      <h2>Break it</h2>
+      <button id="break" type="button" aria-pressed="false">💥 Break it: never resize the table</button>
+      <p id="breakinfo">Normal run: the table doubles whenever items ÷ buckets passes the threshold.</p>
+    </section>
+  </div>
+
+  <section class="learn">
+    <h2>What to notice</h2>
+    <ul>
+      <li>Each key goes to bucket <code>hash(key) mod buckets</code>. Two keys in one bucket is a <b>collision</b>, and they form a chain.</li>
+      <li>A resize is expensive (every key moves), but it happens rarely and halves the load factor. Total work stays roughly linear.</li>
+      <li>Notice keys jump to different buckets after a resize, because the modulus changed. Same hash, new home.</li>
+      <li>Turn on Break it: chains grow linearly, so inserts and lookups drift from O(1) toward O(n).</li>
+    </ul>
+  </section>
+  <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
+</main>
+<script>
+/* ===== tinkertoy runtime v0.1 (inline, no deps) ===== */
+const T = (() => {
+  const C = { bg:'#131826', panel:'#1a2133', line:'#2c3753', text:'#e6eaf3', mut:'#8b96b0', acc:'#6ea8ff', ok:'#4ade80', bad:'#ff5d6c', warn:'#fbbf24', pur:'#b794f6', teal:'#2dd4bf' };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const rng = seed => { let a = (seed >>> 0) || 1; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const rr = (g, x, y, w, h, r, fill, stroke, lw) => { g.beginPath(); g.roundRect(x, y, w, h, r); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  const text = (g, s, x, y, o = {}) => { g.font = `${o.weight || 500} ${o.size || 13}px ${o.mono ? 'ui-monospace,Menlo,Consolas,monospace' : 'system-ui,-apple-system,Segoe UI,sans-serif'}`; g.fillStyle = o.color || C.text; g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'middle'; g.fillText(s, x, y); };
+  const line = (g, x1, y1, x2, y2, color, lw, dash) => { g.beginPath(); g.setLineDash(dash || []); g.moveTo(x1, y1); g.lineTo(x2, y2); g.strokeStyle = color || C.line; g.lineWidth = lw || 1; g.stroke(); g.setLineDash([]); };
+  const arrow = (g, x1, y1, x2, y2, color, lw) => { line(g, x1, y1, x2, y2, color, lw || 1.5); const a = Math.atan2(y2 - y1, x2 - x1), s = 7; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - s * Math.cos(a - 0.4), y2 - s * Math.sin(a - 0.4)); g.lineTo(x2 - s * Math.cos(a + 0.4), y2 - s * Math.sin(a + 0.4)); g.closePath(); g.fillStyle = color || C.line; g.fill(); };
+  const circle = (g, x, y, r, fill, stroke, lw) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  return { C, clamp, lerp, ease, rng, hash, rr, text, line, arrow, circle };
+})();
+
+function Tinkertoy(cfg) {
+  const $ = id => document.getElementById(id);
+  const canvas = $('stage'), wrap = $('stagewrap'), g = canvas.getContext('2d');
+  const inputs = [...document.querySelectorAll('input[data-param]')];
+  const params = {}, fmt = cfg.fmt || {};
+  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '';
+  const SPEEDS = [0.5, 1, 2, 4];
+  const rate = cfg.rate || 2;
+
+  function readParams() { for (const el of inputs) { params[el.id] = +el.value; const o = document.querySelector(`output[for="${el.id}"]`); if (o) o.textContent = (fmt[el.id] || (v => v))(+el.value); } }
+  function saveHash() { try { const q = inputs.map(el => `${el.id}=${el.value}`); if (broken) q.push('break=1'); history.replaceState(null, '', '#' + q.join('&')); } catch (e) {} }
+  function loadHash() { try { const h = new URLSearchParams(location.hash.slice(1)); for (const el of inputs) if (h.has(el.id)) el.value = h.get(el.id); if (h.get('break') === '1') broken = true; } catch (e) {} }
+  function rebuild() {
+    readParams();
+    frames = cfg.build({ ...params }, broken);
+    n = frames.length;
+    $('scrub').max = String(n - 1);
+    pos = T.clamp(pos, 0, n - 1);
+    resize();
+  }
+  function resize() {
+    const w = wrap.clientWidth || 600; lastWrapW = w;
+    cssW = Math.max(w, cfg.minWidth || 0);
+    cssH = Math.round(cfg.height ? cfg.height(cssW, { params, frames }) : cssW * 0.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render();
+  }
+  function cur() { const i = Math.min(n - 1, Math.max(0, Math.ceil(pos - 1e-9))); const t = i === 0 ? 1 : T.clamp(1 - (i - pos), 0, 1); return { i, t }; }
+  function render() {
+    const { i, t } = cur(), frame = frames[i], prev = frames[Math.max(0, i - 1)];
+    g.clearRect(0, 0, cssW, cssH); g.fillStyle = T.C.bg; g.fillRect(0, 0, cssW, cssH);
+    cfg.draw({ g, W: cssW, H: cssH, frame, prev, i, t, n, frames, p: params, broken, T, C: T.C });
+    $('scrub').value = String(pos);
+    $('pos').textContent = (cfg.posLabel ? cfg.posLabel(frame, i, n) : `step ${i + 1} / ${n}`);
+    const cap = $('caption'); cap.innerHTML = frame.msg || ''; cap.classList.toggle('bad', !!frame.bad);
+    const key = JSON.stringify(frame.stats || []);
+    if (key !== statKey) { statKey = key; $('stats').innerHTML = (frame.stats || []).map(([k, v, tone]) => `<div class="stat ${tone || ''}"><small>${k}</small><b>${v}</b></div>`).join(''); }
+    $('play').textContent = playing ? '⏸ Pause' : (pos >= n - 1 ? '↺ Replay' : '▶ Play');
+  }
+  function loop(ts) {
+    if (playing) {
+      const dt = Math.min(0.1, (ts - lastTs) / 1000); pos = Math.min(n - 1, pos + dt * rate * speed);
+      if (pos >= n - 1) playing = false;
+      render();
+    }
+    lastTs = ts; requestAnimationFrame(loop);
+  }
+  const play = () => { if (pos >= n - 1) pos = 0; playing = true; render(); };
+  const pause = () => { playing = false; render(); };
+  const seek = v => { pos = T.clamp(+v, 0, n - 1); render(); };
+  const setBreak = b => { broken = !!b; wrap.classList.toggle('broken', broken); $('break').setAttribute('aria-pressed', String(broken)); $('badge').hidden = !broken; $('breakinfo').innerHTML = broken ? cfg.breakOn || '' : cfg.breakOff || ''; const lb = $('break'); lb.textContent = broken ? '↩ Un-break it (restore normal behaviour)' : lb.dataset.label; rebuild(); saveHash(); };
+
+  $('break').dataset.label = $('break').textContent;
+  loadHash(); readParams();
+  $('play').onclick = () => (playing ? pause() : play());
+  $('step').onclick = () => { playing = false; seek(Math.floor(pos + 1e-9) + 1); };
+  $('back').onclick = () => { playing = false; seek(Math.ceil(pos - 1e-9) - 1); };
+  $('scrub').oninput = e => { playing = false; seek(e.target.value); };
+  $('speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('speed').textContent = speed + '×'; };
+  $('break').onclick = () => { setBreak(!broken); pos = 0; play(); };
+  inputs.forEach(el => el.addEventListener('input', () => { rebuild(); saveHash(); }));
+  addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input,button,select,textarea')) return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') $('step').click(); else if (e.key === 'ArrowLeft') $('back').click(); else if (e.key === 'b') $('break').click(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastWrapW) > 1) resize(); }).observe(wrap);
+  setBreak(broken);
+  requestAnimationFrame(loop);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, auto = new URLSearchParams(location.search).get('autoplay') !== '0';
+  if (auto && !reduce) setTimeout(play, 350); else render();
+  window.tinkertoy = {
+    get steps() { return n; }, get state() { const { i, t } = cur(); return { pos, i, t, n, broken, playing, params: { ...params }, frame: frames[i] }; },
+    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); },
+    frames: () => frames
+  };
+}
+
+const WORDS = ['apple','banana','cherry','date','elder','fig','grape','honey','iris','jade','kiwi','lemon','mango','nectar','olive','peach','quince','rose','sage','thyme','umber','vanilla','walnut','yarrow'];
+const hex = n => '0x' + n.toString(16).padStart(8, '0');
+const hue = k => 'hsl(' + (T.hash(k + '!') % 360) + ',62%,62%)';
+
+Tinkertoy({
+  rate: 1.6,
+  breakOn: 'Resizing is switched off. The bucket count never changes, so chains keep growing and every insert has to walk a longer list.',
+  breakOff: 'Normal run: the table doubles whenever items ÷ buckets passes the threshold.',
+  fmt: { load: v => v.toFixed(2) },
+  build(p, broken) {
+    let b = p.buckets, tab = Array.from({ length: b }, () => []);
+    const frames = []; let work = 0, inserts = 0, resizes = 0;
+    const snap = () => tab.map(c => c.slice());
+    const longest = () => Math.max(...tab.map(c => c.length));
+    const stats = () => {
+      const n = tab.reduce((s, c) => s + c.length, 0), lf = n / b, L = longest();
+      const lk = n ? tab.reduce((s, c) => s + c.reduce((a, _, j) => a + j + 1, 0), 0) / n : 0;
+      return [['Items', n], ['Buckets', b], ['Load factor', lf.toFixed(2), lf > p.load ? 'warn' : 'ok'], ['Longest chain', L, L >= 6 ? 'bad' : L >= 4 ? 'warn' : 'ok'], ['Avg lookup cost', lk.toFixed(1) + ' cmp', lk >= 3 ? 'bad' : lk >= 2 ? 'warn' : 'ok'], ['Work so far', work + ' steps']];
+    };
+    frames.push({ type: 'start', tab: snap(), b, msg: `An empty hash table with <b>${b}</b> buckets. We will insert ${p.keys} keys one at a time.`, stats: stats() });
+    for (let k = 0; k < p.keys; k++) {
+      const key = WORDS[k], h = T.hash(key), idx = h % b, cost = tab[idx].length + 1;
+      tab[idx].push(key); work += cost; inserts++;
+      const note = tab[idx].length > 1 ? `Bucket ${idx} already holds ${tab[idx].length - 1}, so this is a <b>collision</b>: we walk the chain (${cost} steps) and append.` : `Bucket ${idx} was empty: 1 step.`;
+      frames.push({ type: 'insert', key, idx, h, tab: snap(), b, msg: `Insert “<b>${key}</b>”: hash = ${hex(h)}, ${hex(h)} mod ${b} = <b>${idx}</b>. ${note}`, stats: stats() });
+      const n = k + 1;
+      if (!broken && n / b > p.load) {
+        const old = snap(), nb = b * 2, nt = Array.from({ length: nb }, () => []);
+        for (const c of old) for (const kk of c) { nt[T.hash(kk) % nb].push(kk); work++; }
+        resizes++; b = nb; tab = nt;
+        frames.push({ type: 'grow', tab: snap(), b, msg: `Load factor ${n}/${nb / 2} = <b>${(n / (nb / 2)).toFixed(2)}</b> is over ${p.load.toFixed(2)}. <b>Resize:</b> allocate ${nb} buckets and re-hash all ${n} keys (${n} extra steps). Chains get shorter.`, stats: stats() });
+      } else if (broken && n / b > p.load && n === Math.ceil(p.load * b) + 1) {
+        frames[frames.length - 1].msg += ` <b>Load factor is now ${(n / b).toFixed(2)}</b> (over ${p.load.toFixed(2)}) and nothing reacts.`;
+      }
+    }
+    const avg = work / inserts, L = longest();
+    frames.push({ type: 'done', tab: snap(), b, bad: broken && L >= 6, msg: broken ? `Done. Longest chain is <b>${L}</b>, so finding a key can take up to ${L} comparisons. Average work per insert: <b>${avg.toFixed(1)}</b> steps and rising.` : `Done after ${resizes} resize${resizes === 1 ? '' : 's'}. Longest chain is only <b>${L}</b>. Average work per insert, resizes included: <b>${avg.toFixed(1)}</b> steps.`, stats: stats().concat([['Avg / insert', avg.toFixed(1), broken && avg > 3 ? 'bad' : 'ok']]) });
+    return frames;
+  },
+  height(W, { frames }) {
+    const mb = Math.max(...frames.map(f => f.b)), cols = W >= 720 && mb > 8 ? 2 : 1;
+    return 62 + Math.ceil(mb / cols) * 27 + 14;
+  },
+  draw({ g, W, H, frame, prev, t, frames, T, C }) {
+    const mb = Math.max(...frames.map(f => f.b)), cols = W >= 720 && mb > 8 ? 2 : 1, rowH = 27, top = 58, colW = (W - 24) / cols;
+    const maxChain = Math.max(...frames.map(f => Math.max(...f.tab.map(c => c.length))));
+    const cw = Math.max(9, Math.min(50, (colW - 70) / Math.max(maxChain, 4))), ch = 20;
+    const slot = (b, i, j) => ({ x: 12 + Math.floor(i / Math.ceil(b / cols)) * colW + 44 + j * (cw + 2), y: top + (i % Math.ceil(b / cols)) * rowH });
+    const find = (tab, k) => { for (let i = 0; i < tab.length; i++) { const j = tab[i].indexOf(k); if (j >= 0) return [i, j]; } return null; };
+    const rows = Math.ceil(frame.b / cols), fade = frame.type === 'grow' ? T.ease(t) : 1;
+    // header
+    if (frame.type === 'insert') T.text(g, `hash("${frame.key}") = ${hex(frame.h)}   →   ${hex(frame.h)} mod ${frame.b} = ${frame.idx}`, 14, 26, { mono: true, size: 13, color: C.acc });
+    else if (frame.type === 'grow') T.text(g, `↻ rehash: every key moves to hash mod ${frame.b}`, 14, 26, { size: 14, weight: 700, color: C.warn });
+    else T.text(g, frame.type === 'done' ? 'done' : 'empty table', 14, 26, { size: 13, color: C.mut });
+    // bucket rows
+    for (let i = 0; i < frame.b; i++) {
+      const s = slot(frame.b, i, 0), isNew = frame.type === 'grow' && i >= prev.b;
+      const hl = frame.type === 'insert' && i === frame.idx, a = isNew ? fade : 1;
+      g.globalAlpha = a;
+      T.rr(g, s.x - 44, s.y, colW - 8, rowH - 3, 5, hl ? 'rgba(110,168,255,.16)' : '#171e30', hl ? C.acc : '#222b43');
+      T.text(g, String(i), s.x - 30, s.y + 11, { mono: true, size: 12, color: hl ? C.acc : C.mut, align: 'center' });
+      g.globalAlpha = 1;
+    }
+    // chips
+    for (let i = 0; i < frame.b; i++) frame.tab[i].forEach((k, j) => {
+      const to = slot(frame.b, i, j); let x = to.x, y = to.y, a = 1;
+      const pf = frame.type === 'grow' ? find(prev.tab, k) : null;
+      if (frame.type === 'grow' && pf) { const from = slot(prev.b, pf[0], pf[1]), e = T.ease(t); x = T.lerp(from.x, to.x, e); y = T.lerp(from.y, to.y, e); }
+      if (frame.type === 'insert' && k === frame.key) { const e = T.ease(t); x = T.lerp(14, to.x, e); y = T.lerp(12, to.y, e); }
+      const hot = frame.type === 'insert' && k === frame.key;
+      T.rr(g, x, y + 1, cw, ch, 4, hue(k), hot ? '#fff' : null, 2);
+      if (cw >= 34) T.text(g, k.slice(0, 5), x + cw / 2, y + 11, { size: 10, weight: 700, color: '#0b0e14', align: 'center' });
+    });
+    // chain length badges
+    for (let i = 0; i < frame.b; i++) { const L = frame.tab[i].length; if (L >= 4) { const s = slot(frame.b, i, L); T.text(g, '×' + L, Math.min(s.x + 2, 12 + colW - 36), s.y + 12, { size: 12, weight: 700, color: L >= 6 ? C.bad : C.warn }); } }
+  }
+});
+</script>
+</body>
+</html>

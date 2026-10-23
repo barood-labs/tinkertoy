@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Git merge vs rebase · tinkertoy</title>
+<meta name="description" content="Same starting point, two ways to bring main's work into your branch. Watch what happens to the history, the commit hashes, and the conflicts.">
+<style>
+:root{--bg:#0b0e14;--panel:#131826;--panel2:#1a2133;--line:#262f45;--text:#e6eaf3;--mut:#8b96b0;--acc:#6ea8ff;--ok:#4ade80;--bad:#ff5d6c;--warn:#fbbf24;--pur:#b794f6;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.tt{max-width:1040px;margin:0 auto;padding:18px 14px 40px}
+.tt header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:12px}
+.tt h1{margin:0;font-size:1.45rem;letter-spacing:-.01em}
+.tt .sub{margin:0;color:var(--mut);flex:1 1 280px}
+.tt .back{color:var(--mut);font-size:.85rem;text-decoration:none;margin-right:auto;width:100%}
+.tt .back:hover{color:var(--acc)}
+.stage-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto;overflow-y:hidden;transition:border-color .2s,box-shadow .2s}
+.stage-wrap.broken{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad),0 0 28px rgba(255,93,108,.25)}
+#stage{display:block}
+.badge{position:sticky;left:0;float:right;margin:10px;padding:3px 10px;background:var(--bad);color:#fff;font-weight:700;font-size:.72rem;letter-spacing:.08em;border-radius:99px;z-index:2}
+.badge[hidden]{display:none}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.stat{flex:1 1 110px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:0}
+.stat small{display:block;color:var(--mut);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em}
+.stat b{font-size:1.1rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat.ok b{color:var(--ok)}.stat.bad b{color:var(--bad)}.stat.warn b{color:var(--warn)}
+.caption{min-height:3.1em;margin:6px 0 12px;padding:10px 14px;background:var(--panel2);border-left:3px solid var(--acc);border-radius:6px}
+.caption.bad{border-left-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.timeline #scrub{flex:1 1 220px;min-width:140px}
+#pos{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem;min-width:7.5em;text-align:right}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 13px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:#222c44;border-color:#34415f}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#play{min-width:92px;background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
+#play:hover{background:#8bbaff}
+.controls{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+@media(max-width:760px){.controls{grid-template-columns:1fr}.tt h1{font-size:1.2rem}}
+.params,.breakbox,.learn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.params h2,.breakbox h2,.learn h2{margin:0 0 8px;font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.param{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:8px 0}
+.param label{color:var(--text)}
+.param output{color:var(--acc);font-variant-numeric:tabular-nums;font-weight:600}
+.param input{grid-column:1/-1}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px;margin:0;cursor:pointer}
+#break{width:100%;background:#2a1520;border-color:#5a2535;color:#ffb3bc;font-weight:600;text-align:left}
+#break:hover{background:#3a1b2a}
+#break[aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+#breakinfo{margin:8px 0 0;color:var(--mut);font-size:.88rem}
+.learn{margin-top:14px}
+.learn ul{margin:0;padding-left:1.1em;color:#c3cbe0}.learn li{margin:4px 0}
+.tt footer{margin-top:18px;color:var(--mut);font-size:.8rem}.tt footer a{color:var(--acc)}
+code{background:#1d2540;padding:1px 5px;border-radius:4px;font-size:.88em}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="tt">
+  <header>
+    <a class="back" href="../index.html">← all tinkertoys</a>
+    <h1>Git merge vs rebase</h1>
+    <p class="sub">Same starting point, two ways to bring main's work into your branch. Watch what happens to the history, the commit hashes, and the conflicts.</p>
+  </header>
+
+  <section class="stage-wrap" id="stagewrap">
+    <span class="badge" id="badge" hidden>BROKEN</span>
+    <canvas id="stage" role="img" aria-label="Two commit graphs stacked: the top one shows git merge adding a merge commit, the bottom one shows git rebase replaying commits on top of main"></canvas>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live numbers"></section>
+  <p class="caption" id="caption" aria-live="polite"></p>
+
+  <section class="timeline" aria-label="Playback">
+    <button id="play" type="button">▶ Play</button>
+    <button id="back" type="button" aria-label="Step back">◀</button>
+    <button id="step" type="button" aria-label="Step forward">Step ▶</button>
+    <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Scrub the timeline">
+    <span id="pos"></span>
+    <button id="speed" type="button" aria-label="Playback speed">1×</button>
+  </section>
+
+  <div class="controls">
+    <section class="params" aria-label="Parameters">
+      <h2>Tweak it</h2>
+      <div class="param">
+        <label for="base">Shared history before the split (commits)</label><output for="base"></output>
+        <input type="range" id="base" data-param min="1" max="4" step="1" value="2">
+      </div>
+      <div class="param">
+        <label for="m">New commits on main</label><output for="m"></output>
+        <input type="range" id="m" data-param min="1" max="5" step="1" value="2">
+      </div>
+      <div class="param">
+        <label for="f">Your commits on feature</label><output for="f"></output>
+        <input type="range" id="f" data-param min="1" max="5" step="1" value="3">
+      </div>
+    </section>
+    <section class="breakbox" aria-label="Failure mode">
+      <h2>Break it</h2>
+      <button id="break" type="button" aria-pressed="false">💥 Break it: both sides edited the same lines</button>
+      <p id="breakinfo">Normal run: the two branches touched different files, so Git combines them without asking.</p>
+    </section>
+  </div>
+
+  <section class="learn">
+    <h2>What to notice</h2>
+    <ul>
+      <li><b>Merge</b> ties the two histories together with one new merge commit that has <i>two parents</i>. Nothing existing is changed, so every hash stays the same, but the graph keeps its branches.</li>
+      <li><b>Rebase</b> replays your commits one by one on top of main. The history is a straight line, but each replayed commit is a <i>new commit with a new hash</i>; the old ones are abandoned (dashed).</li>
+      <li>Add more commits to feature and watch rebase rewrite all of them. Merge always adds exactly one.</li>
+      <li>Break it: with overlapping edits, merge asks you to resolve once. Rebase can stop at <i>each</i> replayed commit that touches the same lines. In this toy every feature commit does.</li>
+      <li>Rule of thumb: rebase your own unpublished work; don't rebase commits other people already have, since their copies will no longer match.</li>
+      <li>Hashes in the picture come from a small toy hash, not SHA-1/SHA-256.</li>
+    </ul>
+  </section>
+  <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
+</main>
+<script>
+/* ===== tinkertoy runtime v0.1 (inline, no deps) ===== */
+const T = (() => {
+  const C = { bg:'#131826', panel:'#1a2133', line:'#2c3753', text:'#e6eaf3', mut:'#8b96b0', acc:'#6ea8ff', ok:'#4ade80', bad:'#ff5d6c', warn:'#fbbf24', pur:'#b794f6', teal:'#2dd4bf' };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const rng = seed => { let a = (seed >>> 0) || 1; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const rr = (g, x, y, w, h, r, fill, stroke, lw) => { g.beginPath(); g.roundRect(x, y, w, h, r); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  const text = (g, s, x, y, o = {}) => { g.font = `${o.weight || 500} ${o.size || 13}px ${o.mono ? 'ui-monospace,Menlo,Consolas,monospace' : 'system-ui,-apple-system,Segoe UI,sans-serif'}`; g.fillStyle = o.color || C.text; g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'middle'; g.fillText(s, x, y); };
+  const line = (g, x1, y1, x2, y2, color, lw, dash) => { g.beginPath(); g.setLineDash(dash || []); g.moveTo(x1, y1); g.lineTo(x2, y2); g.strokeStyle = color || C.line; g.lineWidth = lw || 1; g.stroke(); g.setLineDash([]); };
+  const arrow = (g, x1, y1, x2, y2, color, lw) => { line(g, x1, y1, x2, y2, color, lw || 1.5); const a = Math.atan2(y2 - y1, x2 - x1), s = 7; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - s * Math.cos(a - 0.4), y2 - s * Math.sin(a - 0.4)); g.lineTo(x2 - s * Math.cos(a + 0.4), y2 - s * Math.sin(a + 0.4)); g.closePath(); g.fillStyle = color || C.line; g.fill(); };
+  const circle = (g, x, y, r, fill, stroke, lw) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  return { C, clamp, lerp, ease, rng, hash, rr, text, line, arrow, circle };
+})();
+
+function Tinkertoy(cfg) {
+  const $ = id => document.getElementById(id);
+  const canvas = $('stage'), wrap = $('stagewrap'), g = canvas.getContext('2d');
+  const inputs = [...document.querySelectorAll('input[data-param]')];
+  const params = {}, fmt = cfg.fmt || {};
+  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '';
+  const SPEEDS = [0.5, 1, 2, 4];
+  const rate = cfg.rate || 2;
+
+  function readParams() { for (const el of inputs) { params[el.id] = +el.value; const o = document.querySelector(`output[for="${el.id}"]`); if (o) o.textContent = (fmt[el.id] || (v => v))(+el.value); } }
+  function saveHash() { try { const q = inputs.map(el => `${el.id}=${el.value}`); if (broken) q.push('break=1'); history.replaceState(null, '', '#' + q.join('&')); } catch (e) {} }
+  function loadHash() { try { const h = new URLSearchParams(location.hash.slice(1)); for (const el of inputs) if (h.has(el.id)) el.value = h.get(el.id); if (h.get('break') === '1') broken = true; } catch (e) {} }
+  function rebuild() {
+    readParams();
+    frames = cfg.build({ ...params }, broken);
+    n = frames.length;
+    $('scrub').max = String(n - 1);
+    pos = T.clamp(pos, 0, n - 1);
+    resize();
+  }
+  function resize() {
+    const w = wrap.clientWidth || 600; lastWrapW = w;
+    cssW = Math.max(w, cfg.minWidth || 0);
+    cssH = Math.round(cfg.height ? cfg.height(cssW, { params, frames }) : cssW * 0.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render();
+  }
+  function cur() { const i = Math.min(n - 1, Math.max(0, Math.ceil(pos - 1e-9))); const t = i === 0 ? 1 : T.clamp(1 - (i - pos), 0, 1); return { i, t }; }
+  function render() {
+    const { i, t } = cur(), frame = frames[i], prev = frames[Math.max(0, i - 1)];
+    g.clearRect(0, 0, cssW, cssH); g.fillStyle = T.C.bg; g.fillRect(0, 0, cssW, cssH);
+    cfg.draw({ g, W: cssW, H: cssH, frame, prev, i, t, n, frames, p: params, broken, T, C: T.C });
+    $('scrub').value = String(pos);
+    $('pos').textContent = (cfg.posLabel ? cfg.posLabel(frame, i, n) : `step ${i + 1} / ${n}`);
+    const cap = $('caption'); cap.innerHTML = frame.msg || ''; cap.classList.toggle('bad', !!frame.bad);
+    const key = JSON.stringify(frame.stats || []);
+    if (key !== statKey) { statKey = key; $('stats').innerHTML = (frame.stats || []).map(([k, v, tone]) => `<div class="stat ${tone || ''}"><small>${k}</small><b>${v}</b></div>`).join(''); }
+    $('play').textContent = playing ? '⏸ Pause' : (pos >= n - 1 ? '↺ Replay' : '▶ Play');
+  }
+  function loop(ts) {
+    if (playing) {
+      const dt = Math.min(0.1, (ts - lastTs) / 1000); pos = Math.min(n - 1, pos + dt * rate * speed);
+      if (pos >= n - 1) playing = false;
+      render();
+    }
+    lastTs = ts; requestAnimationFrame(loop);
+  }
+  const play = () => { if (pos >= n - 1) pos = 0; playing = true; render(); };
+  const pause = () => { playing = false; render(); };
+  const seek = v => { pos = T.clamp(+v, 0, n - 1); render(); };
+  const setBreak = b => { broken = !!b; wrap.classList.toggle('broken', broken); $('break').setAttribute('aria-pressed', String(broken)); $('badge').hidden = !broken; $('breakinfo').innerHTML = broken ? cfg.breakOn || '' : cfg.breakOff || ''; const lb = $('break'); lb.textContent = broken ? '↩ Un-break it (restore normal behaviour)' : lb.dataset.label; rebuild(); saveHash(); };
+
+  $('break').dataset.label = $('break').textContent;
+  loadHash(); readParams();
+  $('play').onclick = () => (playing ? pause() : play());
+  $('step').onclick = () => { playing = false; seek(Math.floor(pos + 1e-9) + 1); };
+  $('back').onclick = () => { playing = false; seek(Math.ceil(pos - 1e-9) - 1); };
+  $('scrub').oninput = e => { playing = false; seek(e.target.value); };
+  $('speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('speed').textContent = speed + '×'; };
+  $('break').onclick = () => { setBreak(!broken); pos = 0; play(); };
+  inputs.forEach(el => el.addEventListener('input', () => { rebuild(); saveHash(); }));
+  addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input,button,select,textarea')) return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') $('step').click(); else if (e.key === 'ArrowLeft') $('back').click(); else if (e.key === 'b') $('break').click(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastWrapW) > 1) resize(); }).observe(wrap);
+  setBreak(broken);
+  requestAnimationFrame(loop);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, auto = new URLSearchParams(location.search).get('autoplay') !== '0';
+  if (auto && !reduce) setTimeout(play, 350); else render();
+  window.tinkertoy = {
+    get steps() { return n; }, get state() { const { i, t } = cur(); return { pos, i, t, n, broken, playing, params: { ...params }, frame: frames[i] }; },
+    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); },
+    frames: () => frames
+  };
+}
+
+Tinkertoy({
+  rate: 1.6,
+  minWidth: 640,
+  breakOn: "Main and every feature commit edit the same lines of one file. Git can't decide, so it stops and asks you to resolve a conflict.",
+  breakOff: 'Normal run: the two branches touched different files, so Git combines them without asking.',
+  height: () => 392,
+  build(p, broken) {
+    const frames = []; let res = { L: 0, R: 0 }, rew = 0;
+    const L = { c: [], tags: {}, pending: null }, R = { c: [], tags: {}, pending: null };
+    const hx = (label, par) => T.hash(label + '|' + par.join(',')).toString(16).padStart(8, '0').slice(0, 6);
+    const mk = (S, id, label, col, row, parents, kind) => { const c = { id, label, col, row, parents, kind, hash: hx(label, parents.map(q => S.c.find(z => z.id === q).hash)), ghost: false, fresh: true }; S.c.push(c); return c; };
+    const snap = () => JSON.parse(JSON.stringify({ L, R }));
+    const cnt = S => S.c.filter(c => !c.ghost).length;
+    const push = (msg, extra = {}) => { const s = snap(); frames.push({ ...s, new: extra.new || [], msg, bad: !!extra.bad, stats: [['Merge: commits', cnt(L)], ['Rebase: commits', cnt(R)], ['Merge conflicts fixed', res.L, res.L ? 'warn' : ''], ['Rebase conflicts fixed', res.R, res.R ? 'warn' : ''], ['Commits rewritten', rew, rew ? 'warn' : '']] }); L.c.forEach(c => (c.fresh = false)); R.c.forEach(c => (c.fresh = false)); };
+    const both = (id, label, col, row, parents) => { mk(L, id, label, col, row, parents, row); mk(R, id, label, col, row, parents, row); };
+    const names = 'ABCD';
+    let prev = null;
+    for (let k = 0; k < p.base; k++) { both(names[k], names[k], k, 'm', prev ? [prev] : []); prev = names[k]; }
+    const bl = prev; L.tags = { main: bl, feature: bl }; R.tags = { main: bl, feature: bl };
+    push(`Both branches start at the same commit <b>${bl}</b>. <b>main</b> and <b>feature</b> point at it. Left: we'll use <b>merge</b>. Right: <b>rebase</b>. Same input for both.`);
+    let mp = bl;
+    for (let k = 1; k <= p.m; k++) { both('M' + k, 'M' + k, p.base + k - 1, 'm', [mp]); mp = 'M' + k; L.tags.main = R.tags.main = mp; push(`A teammate adds <b>M${k}</b> to <b>main</b>.`, { new: ['M' + k] }); }
+    let fp = bl;
+    for (let k = 1; k <= p.f; k++) { both('F' + k, 'F' + k, p.base + k - 1, 'f', [fp]); fp = 'F' + k; L.tags.feature = R.tags.feature = fp; push(`You commit <b>F${k}</b> on <b>feature</b>.`, { new: ['F' + k] }); }
+    push(`The histories have <b>diverged</b>: main has ${p.m} new commit${p.m > 1 ? 's' : ''} you don't have, and feature has ${p.f} that main doesn't. To integrate, merge (top) or rebase (bottom).`);
+    // merge
+    const mcol = p.base + Math.max(p.m, p.f);
+    if (broken) { L.pending = { col: mcol, row: 'f', label: 'merge' }; push(`<b>git merge main</b> → <b>CONFLICT.</b> Main (M${p.m}) and feature (F${p.f}) changed the <i>same lines</i>. Git stops and puts conflict markers in the file. You resolve it by hand, once.`, { bad: true }); L.pending = null; }
+    mk(L, 'MG', 'G', mcol, 'f', ['F' + p.f, 'M' + p.m], 'g'); L.tags.feature = 'MG'; if (broken) res.L = 1;
+    push(`<b>git merge main:</b> one new <b>merge commit G</b> with two parents (F${p.f} and M${p.m}). ${broken ? 'Conflict resolved: 1 time. ' : ''}Existing commits and hashes are <b>unchanged</b>, and the graph still shows that the work happened in parallel.`, { new: ['MG'] });
+    // rebase
+    let tip = 'M' + p.m, firstReplay = true;
+    for (let k = 1; k <= p.f; k++) {
+      const col = p.base + p.m + k - 1;
+      if (firstReplay) { for (let j = 1; j <= p.f; j++) R.c.find(c => c.id === 'F' + j).ghost = true; firstReplay = false; }
+      if (broken) { R.pending = { col, row: 'm', label: "F" + k + "'" }; push(`<b>git rebase main</b>, replaying <b>F${k}</b> onto ${k === 1 ? 'M' + p.m : "F" + (k - 1) + "'"}: <b>CONFLICT</b> on the same lines. You resolve it, then <code>git rebase --continue</code>.`, { bad: true }); R.pending = null; res.R = k; }
+      mk(R, "F" + k + "'", "F" + k + "'", col, 'm', [tip], 'r'); tip = "F" + k + "'"; R.tags.feature = tip; rew = k;
+      push(`<b>git rebase main:</b> replay <b>F${k}</b> as a <b>brand new commit F${k}'</b> (new hash <code>${R.c.find(c => c.id === tip).hash}</code>) on top of ${k === 1 ? 'M' + p.m : "F" + (k - 1) + "'"}.${broken ? ` Conflicts resolved so far: ${k}.` : ''}`, { new: [tip] });
+    }
+    push(`<b>Result.</b> <b>Merge:</b> ${cnt(L)} commits, branches visible, 1 extra merge commit, 0 hashes changed, ${broken ? '1 conflict to resolve' : 'no conflicts'}. <b>Rebase:</b> ${cnt(R)} commits, one straight line, but F1–F${p.f} were <b>rewritten</b> (${p.f} new hashes; the old ones are dashed), ${broken ? p.f + ' conflict' + (p.f > 1 ? 's' : '') + ' to resolve' : 'no conflicts'}.`, { bad: broken });
+    return frames;
+  },
+  draw({ g, W, H, frame: f, t, T, C }) {
+    const cols = Math.max(...f.L.c.concat(f.R.c).map(c => c.col), 0) + 1, x0 = 56, dx = Math.min(78, (W - x0 - 24) / Math.max(cols, 1)), rad = 13, ph = H / 2;
+    const col = c => (c.kind === 'g' ? [C.ok, '#14361f'] : c.kind === 'r' ? [C.teal, '#0f3a36'] : c.row === 'f' ? [C.warn, '#3d3010'] : [C.acc, '#1d3560']);
+    const panel = (S, y0, title, sub) => {
+      const Y = { m: y0 + 62, f: y0 + 128 }, X = k => x0 + dx * k + dx / 2;
+      T.text(g, title, 10, y0 + 16, { size: 13, weight: 700, mono: true, color: '#e6eaf3' }); T.text(g, sub, W - 10, y0 + 16, { size: 11, color: C.mut, align: 'right' });
+      T.text(g, 'main', 8, Y.m, { size: 10.5, color: '#566182' }); T.text(g, 'feature', 8, Y.f, { size: 10.5, color: '#566182' });
+      const by = id => S.c.find(c => c.id === id);
+      for (const c of S.c) for (const pid of c.parents) { const q = by(pid); g.globalAlpha = (c.ghost || q.ghost ? 0.3 : 1) * (c.fresh ? T.ease(t) : 1); T.line(g, X(q.col), Y[q.row], X(c.col), Y[c.row], '#4a5578', 2, c.ghost ? [4, 4] : null); }
+      g.globalAlpha = 1;
+      if (S.pending) { const pp = S.pending, pulse = 0.6 + 0.4 * Math.sin(performance.now() / 160); T.circle(g, X(pp.col), Y[pp.row], rad + 2, 'rgba(255,93,108,.15)', C.bad, 2); T.text(g, '⚡', X(pp.col), Y[pp.row], { size: 13, align: 'center' }); T.text(g, 'CONFLICT', X(pp.col), Y[pp.row] + 26, { size: 10, weight: 700, color: C.bad, align: 'center' }); }
+      for (const c of S.c) {
+        const [stroke, fill] = col(c), a = (c.ghost ? 0.35 : 1) * (c.fresh ? T.ease(t) : 1), x = X(c.col), y = Y[c.row] - (c.fresh ? (1 - T.ease(t)) * 10 : 0);
+        g.globalAlpha = a; g.setLineDash(c.ghost ? [3, 3] : []);
+        T.circle(g, x, y, rad, fill, stroke, 2); g.setLineDash([]);
+        T.text(g, c.label, x, y, { size: c.label.length > 2 ? 9 : 10.5, weight: 700, color: '#e6eaf3', align: 'center' });
+        T.text(g, c.hash, x, y + rad + 10, { size: 9.5, mono: true, color: c.ghost ? '#566182' : '#8b96b0', align: 'center' });
+        g.globalAlpha = 1;
+      }
+      for (const [name, id] of Object.entries(S.tags)) { const c = by(id); if (!c) continue; const x = X(c.col), y = Y[c.row] - rad - 14, w = name.length * 6.4 + 14, same = Object.entries(S.tags).filter(([, o]) => o === id).map(([n]) => n), idx = same.indexOf(name); const yy = y - idx * 17; T.rr(g, x - w / 2, yy - 8, w, 16, 8, name === 'main' ? '#1d3560' : '#3d3010', name === 'main' ? C.acc : C.warn, 1); T.text(g, name, x, yy, { size: 10, weight: 700, color: name === 'main' ? C.acc : C.warn, align: 'center' }); }
+    };
+    panel(f.L, 0, '$ git merge main', 'adds one merge commit');
+    T.line(g, 8, ph, W - 8, ph, '#2a3350', 1, [4, 4]);
+    panel(f.R, ph + 6, '$ git rebase main', 'replays your commits as new ones');
+  }
+});
+</script>
+</body>
+</html>

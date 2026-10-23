@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How a Raft leader election works · tinkertoy</title>
+<meta name="description" content="Every node starts as a follower with a random timer. The first timer to expire asks for votes; whoever collects a majority becomes leader and keeps everyone calm with heartbeats.">
+<style>
+:root{--bg:#0b0e14;--panel:#131826;--panel2:#1a2133;--line:#262f45;--text:#e6eaf3;--mut:#8b96b0;--acc:#6ea8ff;--ok:#4ade80;--bad:#ff5d6c;--warn:#fbbf24;--pur:#b794f6;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.tt{max-width:1040px;margin:0 auto;padding:18px 14px 40px}
+.tt header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:12px}
+.tt h1{margin:0;font-size:1.45rem;letter-spacing:-.01em}
+.tt .sub{margin:0;color:var(--mut);flex:1 1 280px}
+.tt .back{color:var(--mut);font-size:.85rem;text-decoration:none;margin-right:auto;width:100%}
+.tt .back:hover{color:var(--acc)}
+.stage-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto;overflow-y:hidden;transition:border-color .2s,box-shadow .2s}
+.stage-wrap.broken{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad),0 0 28px rgba(255,93,108,.25)}
+#stage{display:block}
+.badge{position:sticky;left:0;float:right;margin:10px;padding:3px 10px;background:var(--bad);color:#fff;font-weight:700;font-size:.72rem;letter-spacing:.08em;border-radius:99px;z-index:2}
+.badge[hidden]{display:none}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.stat{flex:1 1 110px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:0}
+.stat small{display:block;color:var(--mut);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em}
+.stat b{font-size:1.1rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat.ok b{color:var(--ok)}.stat.bad b{color:var(--bad)}.stat.warn b{color:var(--warn)}
+.caption{min-height:3.1em;margin:6px 0 12px;padding:10px 14px;background:var(--panel2);border-left:3px solid var(--acc);border-radius:6px}
+.caption.bad{border-left-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.timeline #scrub{flex:1 1 220px;min-width:140px}
+#pos{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem;min-width:7.5em;text-align:right}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 13px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:#222c44;border-color:#34415f}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#play{min-width:92px;background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
+#play:hover{background:#8bbaff}
+.controls{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+@media(max-width:760px){.controls{grid-template-columns:1fr}.tt h1{font-size:1.2rem}}
+.params,.breakbox,.learn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.params h2,.breakbox h2,.learn h2{margin:0 0 8px;font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.param{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:8px 0}
+.param label{color:var(--text)}
+.param output{color:var(--acc);font-variant-numeric:tabular-nums;font-weight:600}
+.param input{grid-column:1/-1}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px;margin:0;cursor:pointer}
+#break{width:100%;background:#2a1520;border-color:#5a2535;color:#ffb3bc;font-weight:600;text-align:left}
+#break:hover{background:#3a1b2a}
+#break[aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+#breakinfo{margin:8px 0 0;color:var(--mut);font-size:.88rem}
+.learn{margin-top:14px}
+.learn ul{margin:0;padding-left:1.1em;color:#c3cbe0}.learn li{margin:4px 0}
+.tt footer{margin-top:18px;color:var(--mut);font-size:.8rem}.tt footer a{color:var(--acc)}
+code{background:#1d2540;padding:1px 5px;border-radius:4px;font-size:.88em}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="tt">
+  <header>
+    <a class="back" href="../index.html">← all tinkertoys</a>
+    <h1>How a Raft leader election works</h1>
+    <p class="sub">Every node starts as a follower with a random timer. The first timer to expire asks for votes; whoever collects a majority becomes leader and keeps everyone calm with heartbeats.</p>
+  </header>
+
+  <section class="stage-wrap" id="stagewrap">
+    <span class="badge" id="badge" hidden>BROKEN</span>
+    <canvas id="stage" role="img" aria-label="A ring of Raft nodes colored by role with vote and heartbeat messages flying between them"></canvas>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live numbers"></section>
+  <p class="caption" id="caption" aria-live="polite"></p>
+
+  <section class="timeline" aria-label="Playback">
+    <button id="play" type="button">▶ Play</button>
+    <button id="back" type="button" aria-label="Step back">◀</button>
+    <button id="step" type="button" aria-label="Step forward">Step ▶</button>
+    <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Scrub the timeline">
+    <span id="pos"></span>
+    <button id="speed" type="button" aria-label="Playback speed">1×</button>
+  </section>
+
+  <div class="controls">
+    <section class="params" aria-label="Parameters">
+      <h2>Tweak it</h2>
+      <div class="param">
+        <label for="nodes">Cluster size</label><output for="nodes"></output>
+        <input type="range" id="nodes" data-param min="3" max="7" step="1" value="5">
+      </div>
+      <div class="param">
+        <label for="timeout">Minimum election timeout</label><output for="timeout"></output>
+        <input type="range" id="timeout" data-param min="150" max="500" step="10" value="300">
+      </div>
+      <div class="param">
+        <label for="spread">Randomness added to each timeout</label><output for="spread"></output>
+        <input type="range" id="spread" data-param min="0" max="300" step="10" value="150">
+      </div>
+      <div class="param">
+        <label for="latency">Network latency (one way)</label><output for="latency"></output>
+        <input type="range" id="latency" data-param min="10" max="120" step="10" value="40">
+      </div>
+      <div class="param">
+        <label for="seed">Random seed (re-roll the dice)</label><output for="seed"></output>
+        <input type="range" id="seed" data-param min="1" max="30" step="1" value="4">
+      </div>
+    </section>
+    <section class="breakbox" aria-label="Failure mode">
+      <h2>Break it</h2>
+      <button id="break" type="button" aria-pressed="false">💥 Break it: crash the leader</button>
+      <p id="breakinfo">Normal run: a leader is elected and heartbeats keep the cluster stable.</p>
+    </section>
+  </div>
+
+  <section class="learn">
+    <h2>What to notice</h2>
+    <ul>
+      <li>A follower that hears no heartbeat before its <b>election timer</b> expires becomes a candidate, bumps the <b>term</b> and requests votes. Each node votes once per term, and a majority wins.</li>
+      <li>Break it: followers notice within one timeout, the cluster elects a <b>higher-term</b> leader, and the old leader comes back as a follower.</li>
+      <li>Set the randomness to 0: every timer expires together, every node votes for itself, and nobody ever gets a majority. Random timeouts are the fix for <b>split votes</b>.</li>
+      <li>The strip at the bottom shows leadership over time. Red means the cluster cannot accept writes. Try a bigger latency or a smaller timeout and watch the gaps change.</li>
+      <li>Simplified: this shows leader election only (no log replication) and models a crash, not a network partition.</li>
+    </ul>
+  </section>
+  <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
+</main>
+<script>
+/* ===== tinkertoy runtime v0.1 (inline, no deps) ===== */
+const T = (() => {
+  const C = { bg:'#131826', panel:'#1a2133', line:'#2c3753', text:'#e6eaf3', mut:'#8b96b0', acc:'#6ea8ff', ok:'#4ade80', bad:'#ff5d6c', warn:'#fbbf24', pur:'#b794f6', teal:'#2dd4bf' };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const rng = seed => { let a = (seed >>> 0) || 1; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const rr = (g, x, y, w, h, r, fill, stroke, lw) => { g.beginPath(); g.roundRect(x, y, w, h, r); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  const text = (g, s, x, y, o = {}) => { g.font = `${o.weight || 500} ${o.size || 13}px ${o.mono ? 'ui-monospace,Menlo,Consolas,monospace' : 'system-ui,-apple-system,Segoe UI,sans-serif'}`; g.fillStyle = o.color || C.text; g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'middle'; g.fillText(s, x, y); };
+  const line = (g, x1, y1, x2, y2, color, lw, dash) => { g.beginPath(); g.setLineDash(dash || []); g.moveTo(x1, y1); g.lineTo(x2, y2); g.strokeStyle = color || C.line; g.lineWidth = lw || 1; g.stroke(); g.setLineDash([]); };
+  const arrow = (g, x1, y1, x2, y2, color, lw) => { line(g, x1, y1, x2, y2, color, lw || 1.5); const a = Math.atan2(y2 - y1, x2 - x1), s = 7; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - s * Math.cos(a - 0.4), y2 - s * Math.sin(a - 0.4)); g.lineTo(x2 - s * Math.cos(a + 0.4), y2 - s * Math.sin(a + 0.4)); g.closePath(); g.fillStyle = color || C.line; g.fill(); };
+  const circle = (g, x, y, r, fill, stroke, lw) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  return { C, clamp, lerp, ease, rng, hash, rr, text, line, arrow, circle };
+})();
+
+function Tinkertoy(cfg) {
+  const $ = id => document.getElementById(id);
+  const canvas = $('stage'), wrap = $('stagewrap'), g = canvas.getContext('2d');
+  const inputs = [...document.querySelectorAll('input[data-param]')];
+  const params = {}, fmt = cfg.fmt || {};
+  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '';
+  const SPEEDS = [0.5, 1, 2, 4];
+  const rate = cfg.rate || 2;
+
+  function readParams() { for (const el of inputs) { params[el.id] = +el.value; const o = document.querySelector(`output[for="${el.id}"]`); if (o) o.textContent = (fmt[el.id] || (v => v))(+el.value); } }
+  function saveHash() { try { const q = inputs.map(el => `${el.id}=${el.value}`); if (broken) q.push('break=1'); history.replaceState(null, '', '#' + q.join('&')); } catch (e) {} }
+  function loadHash() { try { const h = new URLSearchParams(location.hash.slice(1)); for (const el of inputs) if (h.has(el.id)) el.value = h.get(el.id); if (h.get('break') === '1') broken = true; } catch (e) {} }
+  function rebuild() {
+    readParams();
+    frames = cfg.build({ ...params }, broken);
+    n = frames.length;
+    $('scrub').max = String(n - 1);
+    pos = T.clamp(pos, 0, n - 1);
+    resize();
+  }
+  function resize() {
+    const w = wrap.clientWidth || 600; lastWrapW = w;
+    cssW = Math.max(w, cfg.minWidth || 0);
+    cssH = Math.round(cfg.height ? cfg.height(cssW, { params, frames }) : cssW * 0.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render();
+  }
+  function cur() { const i = Math.min(n - 1, Math.max(0, Math.ceil(pos - 1e-9))); const t = i === 0 ? 1 : T.clamp(1 - (i - pos), 0, 1); return { i, t }; }
+  function render() {
+    const { i, t } = cur(), frame = frames[i], prev = frames[Math.max(0, i - 1)];
+    g.clearRect(0, 0, cssW, cssH); g.fillStyle = T.C.bg; g.fillRect(0, 0, cssW, cssH);
+    cfg.draw({ g, W: cssW, H: cssH, frame, prev, i, t, n, frames, p: params, broken, T, C: T.C });
+    $('scrub').value = String(pos);
+    $('pos').textContent = (cfg.posLabel ? cfg.posLabel(frame, i, n) : `step ${i + 1} / ${n}`);
+    const cap = $('caption'); cap.innerHTML = frame.msg || ''; cap.classList.toggle('bad', !!frame.bad);
+    const key = JSON.stringify(frame.stats || []);
+    if (key !== statKey) { statKey = key; $('stats').innerHTML = (frame.stats || []).map(([k, v, tone]) => `<div class="stat ${tone || ''}"><small>${k}</small><b>${v}</b></div>`).join(''); }
+    $('play').textContent = playing ? '⏸ Pause' : (pos >= n - 1 ? '↺ Replay' : '▶ Play');
+  }
+  function loop(ts) {
+    if (playing) {
+      const dt = Math.min(0.1, (ts - lastTs) / 1000); pos = Math.min(n - 1, pos + dt * rate * speed);
+      if (pos >= n - 1) playing = false;
+      render();
+    }
+    lastTs = ts; requestAnimationFrame(loop);
+  }
+  const play = () => { if (pos >= n - 1) pos = 0; playing = true; render(); };
+  const pause = () => { playing = false; render(); };
+  const seek = v => { pos = T.clamp(+v, 0, n - 1); render(); };
+  const setBreak = b => { broken = !!b; wrap.classList.toggle('broken', broken); $('break').setAttribute('aria-pressed', String(broken)); $('badge').hidden = !broken; $('breakinfo').innerHTML = broken ? cfg.breakOn || '' : cfg.breakOff || ''; const lb = $('break'); lb.textContent = broken ? '↩ Un-break it (restore normal behaviour)' : lb.dataset.label; rebuild(); saveHash(); };
+
+  $('break').dataset.label = $('break').textContent;
+  loadHash(); readParams();
+  $('play').onclick = () => (playing ? pause() : play());
+  $('step').onclick = () => { playing = false; seek(Math.floor(pos + 1e-9) + 1); };
+  $('back').onclick = () => { playing = false; seek(Math.ceil(pos - 1e-9) - 1); };
+  $('scrub').oninput = e => { playing = false; seek(e.target.value); };
+  $('speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('speed').textContent = speed + '×'; };
+  $('break').onclick = () => { setBreak(!broken); pos = 0; play(); };
+  inputs.forEach(el => el.addEventListener('input', () => { rebuild(); saveHash(); }));
+  addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input,button,select,textarea')) return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') $('step').click(); else if (e.key === 'ArrowLeft') $('back').click(); else if (e.key === 'b') $('break').click(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastWrapW) > 1) resize(); }).observe(wrap);
+  setBreak(broken);
+  requestAnimationFrame(loop);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, auto = new URLSearchParams(location.search).get('autoplay') !== '0';
+  if (auto && !reduce) setTimeout(play, 350); else render();
+  window.tinkertoy = {
+    get steps() { return n; }, get state() { const { i, t } = cur(); return { pos, i, t, n, broken, playing, params: { ...params }, frame: frames[i] }; },
+    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); },
+    frames: () => frames
+  };
+}
+
+const ROLE = { F: ['follower', '#5b6b94'], C: ['candidate', '#fbbf24'], L: ['LEADER', '#4ade80'] };
+const KIND = { RV: '#b794f6', VR: '#2dd4bf', AE: '#6ea8ff' };
+const sid = i => 'S' + (i + 1);
+Tinkertoy({
+  rate: 25,
+  breakOn: 'The leader crashes 600 ms after it wins, and comes back 1.6 s later. Followers stop hearing heartbeats, so a new election starts.',
+  breakOff: 'Normal run: a leader is elected and heartbeats keep the cluster stable.',
+  fmt: { timeout: v => v + ' ms', spread: v => '+0…' + v + ' ms', latency: v => v + ' ms' },
+  posLabel: f => f.time + ' ms',
+  build(p, broken) {
+    const N = p.nodes, rnd = T.rng(p.seed * 7919 + 13), END = 3600, DT = 20, HB = 60;
+    const nodes = Array.from({ length: N }, (_, i) => ({ id: i, role: 'F', term: 0, voted: -1, votes: 0, alive: true, reset: 0, deadline: 0 }));
+    const evq = []; let seq = 0, msgs = [], log = [], elections = 0, leaderless = 0, crashPlanned = false, last = null;
+    const sched = (time, fn) => evq.push({ time, seq: seq++, fn });
+    const delay = () => p.latency + Math.floor(rnd() * p.latency * 0.5);
+    const toDur = () => p.timeout + Math.floor(rnd() * (p.spread + 1));
+    const note = (time, text, tone) => { last = { time, text, tone }; log.push(last); if (log.length > 6) log.shift(); };
+    const resetTimer = (n, now) => { n.reset = now; const d = now + toDur(); n.deadline = d; sched(d, () => { if (n.alive && n.deadline === d && n.role !== 'L') startElection(n, d); }); };
+    const send = (from, to, kind, term, now, granted) => { const d = delay(); msgs.push({ from, to, kind, t0: now, t1: now + d, granted }); sched(now + d, () => deliver(from, to, kind, term, now + d, granted)); };
+    function startElection(n, now) {
+      const split = n.role === 'C';
+      n.term++; n.role = 'C'; n.voted = n.id; n.votes = 1; elections++;
+      note(now, split ? `${sid(n.id)}: no winner last time (a <b>split vote</b>). Timer expired again, so it tries <b>term ${n.term}</b>.` : `${sid(n.id)}'s election timer expired with no heartbeat. It becomes a <b>candidate for term ${n.term}</b>, votes for itself and asks everyone for votes.`, split ? 'bad' : 'warn');
+      resetTimer(n, now);
+      for (const m of nodes) if (m.id !== n.id) send(n.id, m.id, 'RV', n.term, now);
+    }
+    function becomeLeader(n, now) {
+      n.role = 'L'; n.deadline = Infinity;
+      note(now, `${sid(n.id)} has <b>${n.votes} of ${N}</b> votes, a majority. It is <b>LEADER of term ${n.term}</b> and starts sending heartbeats.`, 'ok');
+      const hb = (at) => { if (!n.alive || n.role !== 'L') return; for (const m of nodes) if (m.id !== n.id) send(n.id, m.id, 'AE', n.term, at); sched(at + HB, () => hb(at + HB)); };
+      hb(now);
+      if (broken && !crashPlanned) { crashPlanned = true; sched(now + 600, () => { n.alive = false; n.role = 'F'; note(now + 600, `💥 <b>${sid(n.id)} (the leader) crashes.</b> Nobody is sending heartbeats any more.`, 'bad'); sched(now + 600 + 1600, () => { n.alive = true; n.role = 'F'; note(now + 2200, `${sid(n.id)} reboots as a follower (it still thinks it is in term ${n.term}).`, 'warn'); resetTimer(n, now + 2200); }); }); }
+    }
+    function deliver(from, to, kind, term, now, granted) {
+      const m = nodes[to]; if (!m.alive) return;
+      if (kind === 'RV') {
+        if (term > m.term) { m.term = term; if (m.role === 'L') note(now, `${sid(m.id)} sees a higher term and steps down.`, 'warn'); m.role = 'F'; m.voted = -1; }
+        const g = term === m.term && (m.voted === -1 || m.voted === from);
+        if (g) { m.voted = from; resetTimer(m, now); note(now, `${sid(m.id)} votes for ${sid(from)} in term ${term}.`, ''); } else note(now, `${sid(m.id)} refuses ${sid(from)}: it already voted in term ${m.term}.`, 'warn');
+        send(to, from, 'VR', m.term, now, g);
+      } else if (kind === 'VR') {
+        if (term > m.term) { m.term = term; m.role = 'F'; m.voted = -1; return; }
+        if (m.role === 'C' && term === m.term && granted) { m.votes++; if (m.votes > N / 2) becomeLeader(m, now); }
+      } else if (kind === 'AE') {
+        if (term >= m.term) {
+          if (term > m.term) { m.term = term; m.voted = -1; }
+          if (m.role !== 'F') note(now, `${sid(m.id)} hears from the leader of term ${term} and becomes a follower.`, ''); else if (!m.heard) note(now, `${sid(m.id)} hears the first heartbeat. Its timer resets, so it stays a follower.`, '');
+          m.heard = true; m.role = 'F'; resetTimer(m, now);
+        }
+      }
+    }
+    for (const n of nodes) resetTimer(n, 0);
+    const frames = [];
+    for (let tick = 0; tick <= END; tick += DT) {
+      for (;;) { let bi = -1; for (let k = 0; k < evq.length; k++) if (evq[k].time <= tick && (bi < 0 || evq[k].time < evq[bi].time || (evq[k].time === evq[bi].time && evq[k].seq < evq[bi].seq))) bi = k; if (bi < 0) break; const e = evq.splice(bi, 1)[0]; e.fn(); }
+      msgs = msgs.filter(m => m.t1 > tick);
+      let leader = -1, maxTerm = 0; for (const n of nodes) { maxTerm = Math.max(maxTerm, n.term); if (n.alive && n.role === 'L' && (leader < 0 || n.term > nodes[leader].term)) leader = n.id; }
+      if (leader < 0) leaderless += DT;
+      frames.push({
+        time: tick, leader, bad: last ? last.tone === 'bad' : false,
+        nodes: nodes.map(n => ({ role: n.role, term: n.term, alive: n.alive, reset: n.reset, deadline: n.deadline })),
+        msgs: msgs.filter(m => m.t0 <= tick).map(m => ({ ...m })), log: log.map(l => ({ ...l })),
+        msg: last ? `<small>${(last.time / 1000).toFixed(2)}s</small> ${last.text}` : 'All nodes start as followers, each with a randomly chosen election timer.',
+        stats: [['Time', tick + ' ms'], ['Leader', leader >= 0 ? sid(leader) : 'none', leader >= 0 ? 'ok' : 'bad'], ['Term', maxTerm], ['Elections started', elections], ['Time without leader', leaderless + ' ms', leader < 0 && tick > 0 ? 'bad' : '']]
+      });
+    }
+    return frames;
+  },
+  height: W => (W >= 760 ? 430 : 560),
+  draw({ g, W, H, frame, frames, i, p, T, C }) {
+    const wide = W >= 760, ringW = wide ? W * 0.58 : W, ringH = wide ? H - 70 : 330, cx = ringW / 2, cy = ringH / 2 + 8, R = Math.min(ringW * 0.34, ringH * 0.36), N = frame.nodes.length, nr = Math.max(20, Math.min(30, R * 0.2));
+    const pos = k => { const a = -Math.PI / 2 + (k / N) * Math.PI * 2; return [cx + R * Math.cos(a), cy + R * Math.sin(a)]; };
+    // links
+    for (let a = 0; a < N; a++) for (let b = a + 1; b < N; b++) { const [x1, y1] = pos(a), [x2, y2] = pos(b); T.line(g, x1, y1, x2, y2, '#1e2640', 1); }
+    // messages
+    for (const m of frame.msgs) {
+      const f = T.clamp((frame.time - m.t0) / (m.t1 - m.t0), 0, 1), [x1, y1] = pos(m.from), [x2, y2] = pos(m.to), x = T.lerp(x1, x2, f), y = T.lerp(y1, y2, f);
+      T.circle(g, x, y, m.kind === 'AE' ? 4 : 5.5, m.kind === 'VR' && !m.granted ? C.bad : KIND[m.kind], '#0b0e14', 1.5);
+    }
+    // nodes
+    frame.nodes.forEach((n, k) => {
+      const [x, y] = pos(k), col = n.alive ? ROLE[n.role][1] : '#3a1f27';
+      if (n.alive && n.role !== 'L' && isFinite(n.deadline)) { const fr = T.clamp((frame.time - n.reset) / (n.deadline - n.reset), 0, 1); g.beginPath(); g.arc(x, y, nr + 6, -Math.PI / 2, -Math.PI / 2 + fr * Math.PI * 2); g.strokeStyle = fr > 0.8 ? C.bad : C.warn; g.lineWidth = 3; g.stroke(); }
+      if (n.alive && n.role === 'L') { const ph = (frame.time % 300) / 300; g.globalAlpha = 1 - ph; T.circle(g, x, y, nr + 4 + ph * 14, null, C.ok, 2); g.globalAlpha = 1; }
+      T.circle(g, x, y, nr, col, n.alive ? 'rgba(255,255,255,.25)' : C.bad, 2);
+      T.text(g, n.alive ? 'S' + (k + 1) : '✕', x, y - 3, { size: 14, weight: 800, color: n.role === 'C' ? '#1b1405' : n.role === 'L' ? '#04150a' : '#fff', align: 'center' });
+      T.text(g, n.alive ? 'term ' + n.term : 'crashed', x, y + 12, { size: 9.5, color: n.role === 'C' ? '#1b1405' : n.role === 'L' ? '#04150a' : '#cbd5f5', align: 'center', weight: 600 });
+      T.text(g, n.alive ? ROLE[n.role][0] : '', x, y + nr + 16 + (k === 0 ? -nr * 2 - 22 : 0) * 0, { size: 11, color: n.alive ? ROLE[n.role][1] : C.bad, align: 'center', weight: 700 });
+    });
+    // legend
+    let ly = 14; [['vote request', KIND.RV], ['vote reply', KIND.VR], ['heartbeat', KIND.AE]].forEach(([s, c], k) => { T.circle(g, 14 + k * 104, ly, 5, c); T.text(g, s, 24 + k * 104, ly, { size: 11, color: C.mut }); });
+    T.text(g, '◔ ring = election timer', 14, 32, { size: 11, color: C.mut });
+    // event log
+    const lx = wide ? ringW + 6 : 14, lw = wide ? W - ringW - 20 : W - 28, ly0 = wide ? 14 : ringH + 6;
+    T.text(g, 'EVENT LOG', lx, ly0 + 4, { size: 11, color: C.mut, weight: 700 });
+    frame.log.slice().reverse().forEach((l, k) => {
+      const txt = l.text.replace(/<[^>]+>/g, ''), max = Math.floor(lw / 6.7) - 7, lines = [];
+      for (let s = txt; s.length;) { let cut = s.length > max ? s.lastIndexOf(' ', max) : s.length; if (cut < 1) cut = max; lines.push(s.slice(0, cut)); s = s.slice(cut).trimStart(); }
+      const y0 = ly0 + 24 + k * (wide ? 44 : 20);
+      g.globalAlpha = 1 - k * 0.12;
+      if (wide) lines.slice(0, 3).forEach((s, q) => T.text(g, (q ? '   ' : (l.time / 1000).toFixed(2) + 's ') + s, lx, y0 + q * 13, { size: 11, mono: true, color: l.tone === 'bad' ? C.bad : l.tone === 'ok' ? C.ok : l.tone === 'warn' ? C.warn : '#aab4d0' }));
+      else T.text(g, (l.time / 1000).toFixed(2) + 's ' + lines[0], lx, y0, { size: 11, mono: true, color: l.tone === 'bad' ? C.bad : l.tone === 'ok' ? C.ok : l.tone === 'warn' ? C.warn : '#aab4d0' });
+      g.globalAlpha = 1;
+    });
+    // leadership strip
+    const sx = 14, sw = W - 28, sy = H - 34, END = frames[frames.length - 1].time;
+    T.text(g, 'who is leader over time (red = no leader)', sx, sy - 12, { size: 11, color: C.mut });
+    T.rr(g, sx, sy, sw, 14, 4, '#1b0f14');
+    for (let k = 0; k <= i; k++) { const f = frames[k], x = sx + (f.time / END) * sw, w = Math.max(1, (20 / END) * sw + 0.6); g.fillStyle = f.leader < 0 ? C.bad : ['#4ade80', '#2dd4bf', '#6ea8ff', '#b794f6', '#f472b6', '#fbbf24', '#fb923c'][f.leader % 7]; g.fillRect(x, sy, w, 14); if (k > 0 && frames[k - 1].leader !== f.leader && f.leader >= 0) T.text(g, 'S' + (f.leader + 1), x + 3, sy + 7, { size: 10, weight: 800, color: '#06100c' }); }
+    T.rr(g, sx + (frame.time / END) * sw - 1, sy - 3, 3, 20, 1, '#fff');
+  }
+});
+</script>
+</body>
+</html>

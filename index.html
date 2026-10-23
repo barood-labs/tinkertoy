@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tinkertoy: explanations you can play with</title>
+<meta name="description" content="An agent skill that answers 'how does X work' with one self-contained HTML simulation: sliders, a scrub bar and a break-it button.">
+<style>
+:root{--bg:#0b0e17;--panel:#131826;--line:#27304a;--text:#e6eaf3;--mut:#8b96b0;--acc:#6ea8ff}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:radial-gradient(1200px 500px at 50% -10%,#16213f 0,transparent 70%),var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:40px 20px 56px}
+h1{font-size:clamp(34px,6vw,56px);line-height:1.05;margin:0 0 10px;letter-spacing:-.02em}
+.lede{font-size:clamp(17px,2.4vw,21px);color:#c3cbe0;max-width:46em;margin:0 0 22px}
+.install{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 34px}
+.install code{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 14px;font:14px ui-monospace,Menlo,Consolas,monospace;overflow-x:auto;max-width:100%}
+.install button,.install a{background:var(--acc);color:#071022;border:0;border-radius:10px;padding:11px 16px;font:600 14px system-ui;cursor:pointer;text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
+.install a{background:transparent;color:var(--acc);border:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:18px}
+.card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;color:inherit;text-decoration:none;transition:transform .15s,border-color .15s}
+.card:hover,.card:focus-visible{transform:translateY(-3px);border-color:var(--acc);outline:none}
+.thumb{display:block;aspect-ratio:2/1;overflow:hidden;background:#0f1422;border-bottom:1px solid var(--line)}
+.thumb img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.body{display:flex;flex-direction:column;gap:6px;padding:14px 16px 16px}
+.body b{font-size:18px}.body span{color:var(--mut);font-size:14px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}.tags i{font-style:normal;font-size:11.5px;color:#9fb4e6;background:#1a2440;border-radius:99px;padding:2px 9px}
+h2{margin:46px 0 10px;font-size:22px}
+ol{color:#c3cbe0;padding-left:1.2em}li{margin:6px 0}
+footer{margin-top:44px;color:var(--mut);font-size:13.5px}footer a{color:var(--acc)}
+@media (prefers-reduced-motion:reduce){.card{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>tinkertoy</h1>
+  <p class="lede">Ask your coding agent <i>how something works</i> and get a toy you can play with, not a wall of text: one HTML file with sliders, a scrub bar and a <b>Break it</b> button.</p>
+  <div class="install">
+    <code id="cmd">npx @barood-labs/tinkertoy init</code>
+    <button id="copy" type="button" aria-label="Copy install command">Copy</button>
+    <a href="https://github.com/barood-labs/tinkertoy">GitHub</a>
+  </div>
+  <div class="grid">
+    <a class="card" href="examples/gc.html">
+      <span class="thumb"><img src="docs/shots/gc-stage.png" alt="Preview of: How garbage collection (mark and sweep) works" loading="lazy" width="1060" height="520"></span>
+      <span class="body"><b>How garbage collection (mark and sweep) works</b><span>Start from the things your program can reach, mark everything they touch, then sweep away whatever was never marked. Each step is one object.</span><span class="tags"><i>memory</i><i>runtime</i><i>languages</i></span></span>
+    </a>
+    <a class="card" href="examples/git.html">
+      <span class="thumb"><img src="docs/shots/git-stage.png" alt="Preview of: Git merge vs rebase" loading="lazy" width="1060" height="520"></span>
+      <span class="body"><b>Git merge vs rebase</b><span>Same starting point, two ways to bring main's work into your branch. Watch what happens to the history, the commit hashes, and the conflicts.</span><span class="tags"><i>git</i><i>version-control</i><i>tools</i></span></span>
+    </a>
+    <a class="card" href="examples/hashtable.html">
+      <span class="thumb"><img src="docs/shots/hashtable-stage.png" alt="Preview of: How a hash table grows" loading="lazy" width="1060" height="520"></span>
+      <span class="body"><b>How a hash table grows</b><span>Keys land in buckets by hash. When the table gets crowded it doubles and re-hashes everything, which is what keeps lookups fast.</span><span class="tags"><i>data structures</i><i>performance</i></span></span>
+    </a>
+    <a class="card" href="examples/raft.html">
+      <span class="thumb"><img src="docs/shots/raft-stage.png" alt="Preview of: How a Raft leader election works" loading="lazy" width="1060" height="520"></span>
+      <span class="body"><b>How a Raft leader election works</b><span>Every node starts as a follower with a random timer. The first timer to expire asks for votes; whoever collects a majority becomes leader and keeps everyone calm with heartbeats.</span><span class="tags"><i>distributed systems</i><i>consensus</i></span></span>
+    </a>
+    <a class="card" href="examples/tcp.html">
+      <span class="thumb"><img src="docs/shots/tcp-stage.png" alt="Preview of: How TCP congestion control works" loading="lazy" width="1060" height="520"></span>
+      <span class="body"><b>How TCP congestion control works</b><span>A sender can't see the network, so it probes: double fast, then creep up, and halve the moment packets get dropped. Each step here is one round trip.</span><span class="tags"><i>networking</i><i>protocols</i></span></span>
+    </a>
+    <a class="card" href="examples/tls.html">
+      <span class="thumb"><img src="docs/shots/tls-stage.png" alt="Preview of: How an HTTPS (TLS) handshake works" loading="lazy" width="1060" height="520"></span>
+      <span class="body"><b>How an HTTPS (TLS) handshake works</b><span>Two strangers agree on a secret key in public, the server proves who it is with a certificate, and then everything is encrypted. Tiny numbers here, same idea as the real thing.</span><span class="tags"><i>security</i><i>networking</i><i>cryptography</i></span></span>
+    </a>
+  </div>
+  <h2>How it works</h2>
+  <ol>
+    <li>Install the skill into your project (Claude Code, Codex, Cursor).</li>
+    <li>Ask "how does a hash table resize?" The agent writes one self-contained <code>.html</code> file.</li>
+    <li>Open it. Drag the sliders, scrub the timeline, press <b>Break it</b>. It works offline.</li>
+  </ol>
+  <footer>MIT licensed. Each example is a single file with no dependencies, and every model is simplified on purpose. <a href="https://github.com/barood-labs/tinkertoy">Source on GitHub</a>.</footer>
+</main>
+<script>
+document.getElementById('copy').onclick=function(){var b=this,t=document.getElementById('cmd').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent='Copied'},function(){var r=document.createRange();r.selectNode(document.getElementById('cmd'));getSelection().removeAllRanges();getSelection().addRange(r);b.textContent='Press Ctrl+C'});setTimeout(function(){b.textContent='Copy'},1800)};
+</script>
+</body>
+</html>

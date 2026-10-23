@@ -1,0 +1,21 @@
+{
+  "id": "hashtable",
+  "title": "How a hash table grows",
+  "sub": "Keys land in buckets by hash. When the table gets crowded it doubles and re-hashes everything, which is what keeps lookups fast.",
+  "aria": "A hash table drawn as rows of buckets, each holding a chain of colored key chips",
+  "params": [
+    { "id": "keys", "label": "Keys to insert", "min": 6, "max": 24, "step": 1, "value": 18 },
+    { "id": "buckets", "label": "Starting buckets", "min": 2, "max": 8, "step": 1, "value": 4 },
+    { "id": "load", "label": "Resize when load factor exceeds", "min": 0.75, "max": 2, "step": 0.25, "value": 0.75 }
+  ],
+  "breakLabel": "💥 Break it: never resize the table",
+  "breakOff": "Normal run: the table doubles whenever items ÷ buckets passes the threshold.",
+  "breakOn": "Resizing is switched off. The bucket count never changes, so chains keep growing and every insert has to walk a longer list.",
+  "tags": ["data structures", "performance"],
+  "learn": [
+    "Each key goes to bucket <code>hash(key) mod buckets</code>. Two keys in one bucket is a <b>collision</b>, and they form a chain.",
+    "A resize is expensive (every key moves), but it happens rarely and halves the load factor. Total work stays roughly linear.",
+    "Notice keys jump to different buckets after a resize, because the modulus changed. Same hash, new home.",
+    "Turn on Break it: chains grow linearly, so inserts and lookups drift from O(1) toward O(n)."
+  ]
+}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}} · tinkertoy</title>
+<meta name="description" content="{{SUB}}">
+<style>
+{{CSS}}
+</style>
+</head>
+<body>
+<main class="tt">
+  <header>
+    <a class="back" href="{{BACKLINK}}">← all tinkertoys</a>
+    <h1>{{TITLE}}</h1>
+    <p class="sub">{{SUB}}</p>
+  </header>
+
+  <section class="stage-wrap" id="stagewrap">
+    <span class="badge" id="badge" hidden>BROKEN</span>
+    <canvas id="stage" role="img" aria-label="{{ARIA}}"></canvas>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live numbers"></section>
+  <p class="caption" id="caption" aria-live="polite"></p>
+
+  <section class="timeline" aria-label="Playback">
+    <button id="play" type="button">▶ Play</button>
+    <button id="back" type="button" aria-label="Step back">◀</button>
+    <button id="step" type="button" aria-label="Step forward">Step ▶</button>
+    <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Scrub the timeline">
+    <span id="pos"></span>
+    <button id="speed" type="button" aria-label="Playback speed">1×</button>
+  </section>
+
+  <div class="controls">
+    <section class="params" aria-label="Parameters">
+      <h2>Tweak it</h2>
+{{PARAMS}}
+    </section>
+    <section class="breakbox" aria-label="Failure mode">
+      <h2>Break it</h2>
+      <button id="break" type="button" aria-pressed="false">{{BREAK_LABEL}}</button>
+      <p id="breakinfo">{{BREAK_OFF}}</p>
+    </section>
+  </div>
+
+  <section class="learn">
+    <h2>What to notice</h2>
+    <ul>
+{{LEARN}}
+    </ul>
+  </section>
+  <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
+</main>
+<script>
+{{RUNTIME}}
+
+{{SIM}}
+</script>
+</body>
+</html>

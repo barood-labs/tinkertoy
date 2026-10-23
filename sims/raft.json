@@ -1,0 +1,24 @@
+{
+  "id": "raft",
+  "title": "How a Raft leader election works",
+  "sub": "Every node starts as a follower with a random timer. The first timer to expire asks for votes; whoever collects a majority becomes leader and keeps everyone calm with heartbeats.",
+  "aria": "A ring of Raft nodes colored by role with vote and heartbeat messages flying between them",
+  "params": [
+    { "id": "nodes", "label": "Cluster size", "min": 3, "max": 7, "step": 1, "value": 5 },
+    { "id": "timeout", "label": "Minimum election timeout", "min": 150, "max": 500, "step": 10, "value": 300 },
+    { "id": "spread", "label": "Randomness added to each timeout", "min": 0, "max": 300, "step": 10, "value": 150 },
+    { "id": "latency", "label": "Network latency (one way)", "min": 10, "max": 120, "step": 10, "value": 40 },
+    { "id": "seed", "label": "Random seed (re-roll the dice)", "min": 1, "max": 30, "step": 1, "value": 4 }
+  ],
+  "breakLabel": "💥 Break it: crash the leader",
+  "breakOff": "Normal run: a leader is elected and heartbeats keep the cluster stable.",
+  "breakOn": "The leader crashes 600 ms after it wins, and comes back 1.6 s later. Followers stop hearing heartbeats, so a new election starts.",
+  "tags": ["distributed systems", "consensus"],
+  "learn": [
+    "A follower that hears no heartbeat before its <b>election timer</b> expires becomes a candidate, bumps the <b>term</b> and requests votes. Each node votes once per term, and a majority wins.",
+    "Break it: followers notice within one timeout, the cluster elects a <b>higher-term</b> leader, and the old leader comes back as a follower.",
+    "Set the randomness to 0: every timer expires together, every node votes for itself, and nobody ever gets a majority. Random timeouts are the fix for <b>split votes</b>.",
+    "The strip at the bottom shows leadership over time. Red means the cluster cannot accept writes. Try a bigger latency or a smaller timeout and watch the gaps change.",
+    "Simplified: this shows leader election only (no log replication) and models a crash, not a network partition."
+  ]
+}

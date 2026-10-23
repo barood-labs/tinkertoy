@@ -1,0 +1,23 @@
+{
+  "id": "git",
+  "title": "Git merge vs rebase",
+  "sub": "Same starting point, two ways to bring main's work into your branch. Watch what happens to the history, the commit hashes, and the conflicts.",
+  "aria": "Two commit graphs stacked: the top one shows git merge adding a merge commit, the bottom one shows git rebase replaying commits on top of main",
+  "params": [
+    { "id": "base", "label": "Shared history before the split (commits)", "min": 1, "max": 4, "step": 1, "value": 2 },
+    { "id": "m", "label": "New commits on main", "min": 1, "max": 5, "step": 1, "value": 2 },
+    { "id": "f", "label": "Your commits on feature", "min": 1, "max": 5, "step": 1, "value": 3 }
+  ],
+  "breakLabel": "💥 Break it: both sides edited the same lines",
+  "breakOff": "Normal run: the two branches touched different files, so Git combines them without asking.",
+  "breakOn": "Main and every feature commit edit the same lines of one file. Git can't decide, so it stops and asks you to resolve a conflict.",
+  "tags": ["git", "version-control", "tools"],
+  "learn": [
+    "<b>Merge</b> ties the two histories together with one new merge commit that has <i>two parents</i>. Nothing existing is changed, so every hash stays the same, but the graph keeps its branches.",
+    "<b>Rebase</b> replays your commits one by one on top of main. The history is a straight line, but each replayed commit is a <i>new commit with a new hash</i>; the old ones are abandoned (dashed).",
+    "Add more commits to feature and watch rebase rewrite all of them. Merge always adds exactly one.",
+    "Break it: with overlapping edits, merge asks you to resolve once. Rebase can stop at <i>each</i> replayed commit that touches the same lines. In this toy every feature commit does.",
+    "Rule of thumb: rebase your own unpublished work; don't rebase commits other people already have, since their copies will no longer match.",
+    "Hashes in the picture come from a small toy hash, not SHA-1/SHA-256."
+  ]
+}

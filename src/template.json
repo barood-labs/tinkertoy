@@ -1,0 +1,17 @@
+{
+  "id": "template",
+  "title": "How a queue backs up",
+  "sub": "Producers add jobs, a worker drains them. Watch the backlog when arrivals outrun service.",
+  "aria": "Bars showing the queue length after each second",
+  "params": [
+    { "id": "arrive", "label": "Jobs arriving per tick", "min": 1, "max": 9, "step": 1, "value": 4 },
+    { "id": "serve", "label": "Jobs the worker finishes per tick", "min": 1, "max": 9, "step": 1, "value": 5 }
+  ],
+  "breakLabel": "💥 Break it: the worker stalls for 10 ticks",
+  "breakOff": "Normal run: the worker is healthy.",
+  "breakOn": "The worker hangs from tick 10 to 19, and the backlog piles up.",
+  "learn": [
+    "When arrivals are greater than service, the queue grows without bound.",
+    "A short stall leaves a backlog that needs spare capacity to drain."
+  ]
+}

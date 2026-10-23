@@ -1,0 +1,20 @@
+{
+  "name": "@barood-labs/tinkertoy",
+  "version": "0.1.0",
+  "description": "An agent skill that makes your coding agent answer \"how does X work\" with one self-contained, playable HTML simulation: sliders, a scrub bar and a break-it button.",
+  "type": "module",
+  "bin": { "tinkertoy": "cli/tinkertoy.mjs" },
+  "files": ["cli", "lib", "skill", "examples", "LICENSE", "README.md"],
+  "scripts": {
+    "build": "node scripts/build-examples.mjs",
+    "test": "node --test test/*.test.mjs",
+    "shots": "node scripts/shots.mjs",
+    "hero": "node scripts/record-hero.mjs"
+  },
+  "keywords": ["agent-skill", "claude-code", "codex", "cursor", "skill", "simulation", "explorable-explanations", "interactive", "visualization", "ai-agent"],
+  "repository": { "type": "git", "url": "git+https://github.com/barood-labs/tinkertoy.git" },
+  "homepage": "https://barood-labs.github.io/tinkertoy/",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "devDependencies": { "playwright-core": "^1.64.1" }
+}

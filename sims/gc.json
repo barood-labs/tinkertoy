@@ -1,0 +1,24 @@
+{
+  "id": "gc",
+  "title": "How garbage collection (mark and sweep) works",
+  "sub": "Start from the things your program can reach, mark everything they touch, then sweep away whatever was never marked. Each step is one object.",
+  "aria": "A graph of heap objects with roots on the left; objects turn amber then blue as they are marked, then unmarked ones are freed",
+  "params": [
+    { "id": "n", "label": "Objects on the heap", "min": 12, "max": 36, "step": 1, "value": 24 },
+    { "id": "roots", "label": "Roots (variables the program holds)", "min": 1, "max": 4, "step": 1, "value": 2 },
+    { "id": "refs", "label": "References per object", "min": 1, "max": 3, "step": 1, "value": 2 },
+    { "id": "seed", "label": "Random heap shape (seed)", "min": 1, "max": 30, "step": 1, "value": 7 }
+  ],
+  "breakLabel": "💥 Break it: the collector forgets a root",
+  "breakOff": "Normal run: mark from every root, then free only the unmarked objects.",
+  "breakOn": "The collector skips root R1, as if a stack variable was missed. Everything only reachable through it never gets marked, so it is freed while the program still points at it.",
+  "tags": ["memory", "runtime", "languages"],
+  "learn": [
+    "<b>Roots</b> are where the program can start from: stack variables, globals. An object is <i>live</i> if you can follow references from a root to it.",
+    "<b>Mark:</b> white = not seen yet, <b>amber</b> = found but its references not scanned yet, <b>blue</b> = scanned. When no amber is left, every reachable object is blue.",
+    "<b>Sweep:</b> walk the heap and free every object that is still white. Garbage can even point at other garbage, or in a cycle, and still gets collected.",
+    "Raise <b>References per object</b>: denser graphs mean more of the heap is reachable, so less is freed.",
+    "Break it: miss one root and the collector frees objects the program still uses. The red ones are <b>dangling pointers</b>, the root of use-after-free crashes.",
+    "Real collectors add tricks (generations, incremental or concurrent marking, write barriers) that are not shown here."
+  ]
+}

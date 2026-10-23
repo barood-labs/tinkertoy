@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How garbage collection (mark and sweep) works · tinkertoy</title>
+<meta name="description" content="Start from the things your program can reach, mark everything they touch, then sweep away whatever was never marked. Each step is one object.">
+<style>
+:root{--bg:#0b0e14;--panel:#131826;--panel2:#1a2133;--line:#262f45;--text:#e6eaf3;--mut:#8b96b0;--acc:#6ea8ff;--ok:#4ade80;--bad:#ff5d6c;--warn:#fbbf24;--pur:#b794f6;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.tt{max-width:1040px;margin:0 auto;padding:18px 14px 40px}
+.tt header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:12px}
+.tt h1{margin:0;font-size:1.45rem;letter-spacing:-.01em}
+.tt .sub{margin:0;color:var(--mut);flex:1 1 280px}
+.tt .back{color:var(--mut);font-size:.85rem;text-decoration:none;margin-right:auto;width:100%}
+.tt .back:hover{color:var(--acc)}
+.stage-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto;overflow-y:hidden;transition:border-color .2s,box-shadow .2s}
+.stage-wrap.broken{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad),0 0 28px rgba(255,93,108,.25)}
+#stage{display:block}
+.badge{position:sticky;left:0;float:right;margin:10px;padding:3px 10px;background:var(--bad);color:#fff;font-weight:700;font-size:.72rem;letter-spacing:.08em;border-radius:99px;z-index:2}
+.badge[hidden]{display:none}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.stat{flex:1 1 110px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:0}
+.stat small{display:block;color:var(--mut);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em}
+.stat b{font-size:1.1rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat.ok b{color:var(--ok)}.stat.bad b{color:var(--bad)}.stat.warn b{color:var(--warn)}
+.caption{min-height:3.1em;margin:6px 0 12px;padding:10px 14px;background:var(--panel2);border-left:3px solid var(--acc);border-radius:6px}
+.caption.bad{border-left-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.timeline #scrub{flex:1 1 220px;min-width:140px}
+#pos{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem;min-width:7.5em;text-align:right}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 13px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:#222c44;border-color:#34415f}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#play{min-width:92px;background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
+#play:hover{background:#8bbaff}
+.controls{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+@media(max-width:760px){.controls{grid-template-columns:1fr}.tt h1{font-size:1.2rem}}
+.params,.breakbox,.learn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.params h2,.breakbox h2,.learn h2{margin:0 0 8px;font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.param{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:8px 0}
+.param label{color:var(--text)}
+.param output{color:var(--acc);font-variant-numeric:tabular-nums;font-weight:600}
+.param input{grid-column:1/-1}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px;margin:0;cursor:pointer}
+#break{width:100%;background:#2a1520;border-color:#5a2535;color:#ffb3bc;font-weight:600;text-align:left}
+#break:hover{background:#3a1b2a}
+#break[aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+#breakinfo{margin:8px 0 0;color:var(--mut);font-size:.88rem}
+.learn{margin-top:14px}
+.learn ul{margin:0;padding-left:1.1em;color:#c3cbe0}.learn li{margin:4px 0}
+.tt footer{margin-top:18px;color:var(--mut);font-size:.8rem}.tt footer a{color:var(--acc)}
+code{background:#1d2540;padding:1px 5px;border-radius:4px;font-size:.88em}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="tt">
+  <header>
+    <a class="back" href="../index.html">← all tinkertoys</a>
+    <h1>How garbage collection (mark and sweep) works</h1>
+    <p class="sub">Start from the things your program can reach, mark everything they touch, then sweep away whatever was never marked. Each step is one object.</p>
+  </header>
+
+  <section class="stage-wrap" id="stagewrap">
+    <span class="badge" id="badge" hidden>BROKEN</span>
+    <canvas id="stage" role="img" aria-label="A graph of heap objects with roots on the left; objects turn amber then blue as they are marked, then unmarked ones are freed"></canvas>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live numbers"></section>
+  <p class="caption" id="caption" aria-live="polite"></p>
+
+  <section class="timeline" aria-label="Playback">
+    <button id="play" type="button">▶ Play</button>
+    <button id="back" type="button" aria-label="Step back">◀</button>
+    <button id="step" type="button" aria-label="Step forward">Step ▶</button>
+    <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Scrub the timeline">
+    <span id="pos"></span>
+    <button id="speed" type="button" aria-label="Playback speed">1×</button>
+  </section>
+
+  <div class="controls">
+    <section class="params" aria-label="Parameters">
+      <h2>Tweak it</h2>
+      <div class="param">
+        <label for="n">Objects on the heap</label><output for="n"></output>
+        <input type="range" id="n" data-param min="12" max="36" step="1" value="24">
+      </div>
+      <div class="param">
+        <label for="roots">Roots (variables the program holds)</label><output for="roots"></output>
+        <input type="range" id="roots" data-param min="1" max="4" step="1" value="2">
+      </div>
+      <div class="param">
+        <label for="refs">References per object</label><output for="refs"></output>
+        <input type="range" id="refs" data-param min="1" max="3" step="1" value="2">
+      </div>
+      <div class="param">
+        <label for="seed">Random heap shape (seed)</label><output for="seed"></output>
+        <input type="range" id="seed" data-param min="1" max="30" step="1" value="7">
+      </div>
+    </section>
+    <section class="breakbox" aria-label="Failure mode">
+      <h2>Break it</h2>
+      <button id="break" type="button" aria-pressed="false">💥 Break it: the collector forgets a root</button>
+      <p id="breakinfo">Normal run: mark from every root, then free only the unmarked objects.</p>
+    </section>
+  </div>
+
+  <section class="learn">
+    <h2>What to notice</h2>
+    <ul>
+      <li><b>Roots</b> are where the program can start from: stack variables, globals. An object is <i>live</i> if you can follow references from a root to it.</li>
+      <li><b>Mark:</b> white = not seen yet, <b>amber</b> = found but its references not scanned yet, <b>blue</b> = scanned. When no amber is left, every reachable object is blue.</li>
+      <li><b>Sweep:</b> walk the heap and free every object that is still white. Garbage can even point at other garbage, or in a cycle, and still gets collected.</li>
+      <li>Raise <b>References per object</b>: denser graphs mean more of the heap is reachable, so less is freed.</li>
+      <li>Break it: miss one root and the collector frees objects the program still uses. The red ones are <b>dangling pointers</b>, the root of use-after-free crashes.</li>
+      <li>Real collectors add tricks (generations, incremental or concurrent marking, write barriers) that are not shown here.</li>
+    </ul>
+  </section>
+  <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
+</main>
+<script>
+/* ===== tinkertoy runtime v0.1 (inline, no deps) ===== */
+const T = (() => {
+  const C = { bg:'#131826', panel:'#1a2133', line:'#2c3753', text:'#e6eaf3', mut:'#8b96b0', acc:'#6ea8ff', ok:'#4ade80', bad:'#ff5d6c', warn:'#fbbf24', pur:'#b794f6', teal:'#2dd4bf' };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const rng = seed => { let a = (seed >>> 0) || 1; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const rr = (g, x, y, w, h, r, fill, stroke, lw) => { g.beginPath(); g.roundRect(x, y, w, h, r); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  const text = (g, s, x, y, o = {}) => { g.font = `${o.weight || 500} ${o.size || 13}px ${o.mono ? 'ui-monospace,Menlo,Consolas,monospace' : 'system-ui,-apple-system,Segoe UI,sans-serif'}`; g.fillStyle = o.color || C.text; g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'middle'; g.fillText(s, x, y); };
+  const line = (g, x1, y1, x2, y2, color, lw, dash) => { g.beginPath(); g.setLineDash(dash || []); g.moveTo(x1, y1); g.lineTo(x2, y2); g.strokeStyle = color || C.line; g.lineWidth = lw || 1; g.stroke(); g.setLineDash([]); };
+  const arrow = (g, x1, y1, x2, y2, color, lw) => { line(g, x1, y1, x2, y2, color, lw || 1.5); const a = Math.atan2(y2 - y1, x2 - x1), s = 7; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - s * Math.cos(a - 0.4), y2 - s * Math.sin(a - 0.4)); g.lineTo(x2 - s * Math.cos(a + 0.4), y2 - s * Math.sin(a + 0.4)); g.closePath(); g.fillStyle = color || C.line; g.fill(); };
+  const circle = (g, x, y, r, fill, stroke, lw) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  return { C, clamp, lerp, ease, rng, hash, rr, text, line, arrow, circle };
+})();
+
+function Tinkertoy(cfg) {
+  const $ = id => document.getElementById(id);
+  const canvas = $('stage'), wrap = $('stagewrap'), g = canvas.getContext('2d');
+  const inputs = [...document.querySelectorAll('input[data-param]')];
+  const params = {}, fmt = cfg.fmt || {};
+  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '';
+  const SPEEDS = [0.5, 1, 2, 4];
+  const rate = cfg.rate || 2;
+
+  function readParams() { for (const el of inputs) { params[el.id] = +el.value; const o = document.querySelector(`output[for="${el.id}"]`); if (o) o.textContent = (fmt[el.id] || (v => v))(+el.value); } }
+  function saveHash() { try { const q = inputs.map(el => `${el.id}=${el.value}`); if (broken) q.push('break=1'); history.replaceState(null, '', '#' + q.join('&')); } catch (e) {} }
+  function loadHash() { try { const h = new URLSearchParams(location.hash.slice(1)); for (const el of inputs) if (h.has(el.id)) el.value = h.get(el.id); if (h.get('break') === '1') broken = true; } catch (e) {} }
+  function rebuild() {
+    readParams();
+    frames = cfg.build({ ...params }, broken);
+    n = frames.length;
+    $('scrub').max = String(n - 1);
+    pos = T.clamp(pos, 0, n - 1);
+    resize();
+  }
+  function resize() {
+    const w = wrap.clientWidth || 600; lastWrapW = w;
+    cssW = Math.max(w, cfg.minWidth || 0);
+    cssH = Math.round(cfg.height ? cfg.height(cssW, { params, frames }) : cssW * 0.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render();
+  }
+  function cur() { const i = Math.min(n - 1, Math.max(0, Math.ceil(pos - 1e-9))); const t = i === 0 ? 1 : T.clamp(1 - (i - pos), 0, 1); return { i, t }; }
+  function render() {
+    const { i, t } = cur(), frame = frames[i], prev = frames[Math.max(0, i - 1)];
+    g.clearRect(0, 0, cssW, cssH); g.fillStyle = T.C.bg; g.fillRect(0, 0, cssW, cssH);
+    cfg.draw({ g, W: cssW, H: cssH, frame, prev, i, t, n, frames, p: params, broken, T, C: T.C });
+    $('scrub').value = String(pos);
+    $('pos').textContent = (cfg.posLabel ? cfg.posLabel(frame, i, n) : `step ${i + 1} / ${n}`);
+    const cap = $('caption'); cap.innerHTML = frame.msg || ''; cap.classList.toggle('bad', !!frame.bad);
+    const key = JSON.stringify(frame.stats || []);
+    if (key !== statKey) { statKey = key; $('stats').innerHTML = (frame.stats || []).map(([k, v, tone]) => `<div class="stat ${tone || ''}"><small>${k}</small><b>${v}</b></div>`).join(''); }
+    $('play').textContent = playing ? '⏸ Pause' : (pos >= n - 1 ? '↺ Replay' : '▶ Play');
+  }
+  function loop(ts) {
+    if (playing) {
+      const dt = Math.min(0.1, (ts - lastTs) / 1000); pos = Math.min(n - 1, pos + dt * rate * speed);
+      if (pos >= n - 1) playing = false;
+      render();
+    }
+    lastTs = ts; requestAnimationFrame(loop);
+  }
+  const play = () => { if (pos >= n - 1) pos = 0; playing = true; render(); };
+  const pause = () => { playing = false; render(); };
+  const seek = v => { pos = T.clamp(+v, 0, n - 1); render(); };
+  const setBreak = b => { broken = !!b; wrap.classList.toggle('broken', broken); $('break').setAttribute('aria-pressed', String(broken)); $('badge').hidden = !broken; $('breakinfo').innerHTML = broken ? cfg.breakOn || '' : cfg.breakOff || ''; const lb = $('break'); lb.textContent = broken ? '↩ Un-break it (restore normal behaviour)' : lb.dataset.label; rebuild(); saveHash(); };
+
+  $('break').dataset.label = $('break').textContent;
+  loadHash(); readParams();
+  $('play').onclick = () => (playing ? pause() : play());
+  $('step').onclick = () => { playing = false; seek(Math.floor(pos + 1e-9) + 1); };
+  $('back').onclick = () => { playing = false; seek(Math.ceil(pos - 1e-9) - 1); };
+  $('scrub').oninput = e => { playing = false; seek(e.target.value); };
+  $('speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('speed').textContent = speed + '×'; };
+  $('break').onclick = () => { setBreak(!broken); pos = 0; play(); };
+  inputs.forEach(el => el.addEventListener('input', () => { rebuild(); saveHash(); }));
+  addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input,button,select,textarea')) return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') $('step').click(); else if (e.key === 'ArrowLeft') $('back').click(); else if (e.key === 'b') $('break').click(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastWrapW) > 1) resize(); }).observe(wrap);
+  setBreak(broken);
+  requestAnimationFrame(loop);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, auto = new URLSearchParams(location.search).get('autoplay') !== '0';
+  if (auto && !reduce) setTimeout(play, 350); else render();
+  window.tinkertoy = {
+    get steps() { return n; }, get state() { const { i, t } = cur(); return { pos, i, t, n, broken, playing, params: { ...params }, frame: frames[i] }; },
+    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); },
+    frames: () => frames
+  };
+}
+
+Tinkertoy({
+  rate: 5,
+  breakOn: 'The collector skips root R1, as if a stack variable was missed. Everything only reachable through it never gets marked, so it is freed while the program still points at it.',
+  breakOff: 'Normal run: mark from every root, then free only the unmarked objects.',
+  height: W => (W < 560 ? 430 : 470),
+  build(p, broken) {
+    const rnd = (() => { let a = (p.seed * 7919) >>> 0 || 1; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
+    const n = p.n, nl = Math.ceil(n * 0.6), R = Math.min(p.roots, nl);
+    // shuffle ids so live/dead are mixed in heap order
+    const ids = [...Array(n).keys()]; for (let k = n - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); [ids[k], ids[j]] = [ids[j], ids[k]]; }
+    const live = ids.slice(0, nl), dead = ids.slice(nl), refs = Array.from({ length: n }, () => new Set());
+    for (let k = R; k < nl; k++) refs[live[Math.floor(rnd() * k)]].add(live[k]);
+    for (const o of live) { const extra = Math.floor(rnd() * p.refs); for (let e = 0; e < extra; e++) { const t = live[Math.floor(rnd() * nl)]; if (t !== o) refs[o].add(t); } }
+    for (const o of dead) { const c = 1 + Math.floor(rnd() * p.refs); for (let e = 0; e < c; e++) { const t = Math.floor(rnd() * n); if (t !== o) refs[o].add(t); } }
+    const rootT = live.slice(0, R), adj = refs.map(s => [...s].sort((a, b) => a - b));
+    const size = Array.from({ length: n }, () => 1 + Math.floor(rnd() * 3));
+    // layout (unit square), roots pinned to the left
+    const pos = Array.from({ length: n }, () => ({ x: 0.25 + rnd() * 0.7, y: 0.05 + rnd() * 0.9 }));
+    const rootY = k => (R === 1 ? 0.5 : 0.12 + (0.76 * k) / (R - 1));
+    for (let it = 0; it < 300; it++) {
+      const f = pos.map(() => ({ x: 0, y: 0 })), cool = 1 - it / 320;
+      for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) { let dx = pos[a].x - pos[b].x, dy = pos[a].y - pos[b].y; const d2 = dx * dx + dy * dy + 1e-4, d = Math.sqrt(d2), s = 0.0006 / d2; f[a].x += dx / d * s; f[a].y += dy / d * s; f[b].x -= dx / d * s; f[b].y -= dy / d * s; }
+      for (let a = 0; a < n; a++) for (const b of adj[a]) { const dx = pos[b].x - pos[a].x, dy = pos[b].y - pos[a].y, d = Math.sqrt(dx * dx + dy * dy) + 1e-6, s = (d - 0.09) * 0.07; f[a].x += dx / d * s; f[a].y += dy / d * s; f[b].x -= dx / d * s; f[b].y -= dy / d * s; }
+      rootT.forEach((o, k) => { f[o].x += (0.22 - pos[o].x) * 0.05; f[o].y += (rootY(k) - pos[o].y) * 0.03; });
+      for (let a = 0; a < n; a++) { f[a].x += (0.58 - pos[a].x) * 0.035; f[a].y += (0.5 - pos[a].y) * 0.05; pos[a].x = Math.min(0.98, Math.max(0.2, pos[a].x + Math.max(-0.03, Math.min(0.03, f[a].x)) * cool)); pos[a].y = Math.min(0.97, Math.max(0.03, pos[a].y + Math.max(-0.03, Math.min(0.03, f[a].y)) * cool)); }
+    }
+    // truth: reachable from all roots
+    const truth = new Array(n).fill(false); { const q = [...rootT]; q.forEach(o => (truth[o] = true)); while (q.length) { const o = q.shift(); for (const t of adj[o]) if (!truth[t]) { truth[t] = true; q.push(t); } } }
+    const skipped = broken ? 0 : -1;
+    // states: 0 white, 1 gray, 2 black, 3 freed, 4 dangling (freed but still reachable), 5 live (after sweep)
+    const st = new Array(n).fill(0), frames = [], base = { pos, adj, rootT, rootY, size, skipped, n };
+    const count = k => st.filter(s => s === k).length;
+    const stats = (phase, tone) => [['Phase', phase, tone || ''], ['Marked', count(2) + count(1) + count(5), ''], ['Freed', count(3) + count(4), ''], ['Live kept', count(5), 'ok'], ['Dangling', count(4), count(4) ? 'bad' : '']];
+    const push = (f) => frames.push({ ...base, st: st.slice(), active: -1, phase: 'idle', ...f });
+    push({ msg: `A heap of <b>${n}</b> objects. The program holds <b>${R}</b> root${R > 1 ? 's' : ''} (left). Which objects can it still reach? Everything else is garbage. ${broken ? '<b>This collector will skip root R1.</b>' : ''}`, stats: stats('Idle') });
+    const q = [];
+    rootT.forEach((o, k) => { if (k === skipped) return; st[o] = 1; q.push(o); });
+    push({ phase: 'mark', msg: `<b>Mark begins:</b> the collector colours the objects the roots point to <b style="color:#fbbf24">amber</b> (found, not scanned yet).${broken ? ' <b>R1 is skipped</b>, so its target stays white.' : ''}`, stats: stats('Mark'), bad: broken });
+    while (q.length) {
+      const o = q.shift(); const found = [];
+      for (const t of adj[o]) if (st[t] === 0) { st[t] = 1; q.push(t); found.push(t); }
+      st[o] = 2;
+      push({ phase: 'mark', active: o, found, msg: `Scan <b>#${o}</b>: ${adj[o].length ? 'it points to ' + adj[o].map(t => '#' + t).join(', ') + (found.length ? `, newly found: ${found.map(t => '#' + t).join(', ')}` : ', all already seen') : 'it points to nothing'}. It turns <b style="color:#6ea8ff">blue</b> (fully scanned).`, stats: stats('Mark') });
+    }
+    push({ phase: 'mark', msg: `<b>Mark done.</b> No amber left. Every object reachable from the roots the collector knew is blue; the white ones were never reached.`, stats: stats('Mark done') });
+    let dang = 0;
+    for (let o = 0; o < n; o++) {
+      let m;
+      if (st[o] === 2) { st[o] = 5; m = `<b>#${o}</b> is marked: keep it (and clear the mark for next time).`; }
+      else { if (truth[o]) { st[o] = 4; dang++; m = `<b>#${o}</b> is white, so it is freed. <b>But the program can still reach it.</b> That is a dangling pointer.`; } else { st[o] = 3; m = `<b>#${o}</b> is white: nothing reachable points to it. <b>Freed.</b>`; } }
+      push({ phase: 'sweep', active: o, msg: 'Sweep: ' + m, bad: st[o] === 4, stats: stats('Sweep', st[o] === 4 ? 'bad' : '') });
+    }
+    const freed = count(3) + count(4), freedBlocks = st.reduce((a, s, o) => a + (s === 3 || s === 4 ? size[o] : 0), 0), tot = size.reduce((a, b) => a + b, 0);
+    push({ phase: 'done', msg: broken ? `<b>Sweep done, but it freed ${dang} object${dang === 1 ? '' : 's'} the program still uses.</b> Nothing complained yet: the damage shows up later, when the program follows a stale pointer.` : `<b>Sweep done:</b> ${freed} of ${n} objects freed, ${freedBlocks} of ${tot} memory blocks reclaimed. Everything left is reachable from a root. Garbage that pointed at garbage (even in a loop) was collected too.`, stats: stats('Done', dang ? 'bad' : ''), bad: dang > 0 });
+    if (broken && dang) push({ phase: 'crash', crash: rootT[0], msg: `<b>💥 Use after free.</b> The program follows root R1 to <b>#${rootT[0]}</b>, but that memory is gone. In C this is undefined behaviour; in a managed runtime this bug is exactly what a correct collector exists to prevent.`, stats: stats('Crash', 'bad'), bad: true });
+    return frames;
+  },
+  draw({ g, W, H, frame: f, T, C }) {
+    const small = W < 560, gx0 = 92, gx1 = W - 24, gy0 = 12, gy1 = H - 82, rad = f.n > 28 || small ? 12 : 15;
+    const X = u => gx0 + (u - 0.2) / 0.78 * (gx1 - gx0), Y = u => gy0 + rad + 4 + u * (gy1 - gy0 - 2 * rad - 8), P = o => [X(f.pos[o].x), Y(f.pos[o].y)];
+    const col = s => ({ 0: ['#232c45', '#8b96b0'], 1: ['#5b4515', '#fbbf24'], 2: ['#1f3d6e', '#6ea8ff'], 3: ['rgba(0,0,0,0)', '#3a4468'], 4: ['rgba(255,93,108,.25)', '#ff5d6c'], 5: ['rgba(74,222,128,.16)', '#4ade80'] }[s]);
+    const edge = (x1, y1, x2, y2, c, lw, bend) => {
+      const dx = x2 - x1, dy = y2 - y1, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d, sx = x1 + ux * rad, sy = y1 + uy * rad, ex = x2 - ux * (rad + 3), ey = y2 - uy * (rad + 3), mx = (sx + ex) / 2 - uy * bend, my = (sy + ey) / 2 + ux * bend;
+      g.beginPath(); g.moveTo(sx, sy); g.quadraticCurveTo(mx, my, ex, ey); g.strokeStyle = c; g.lineWidth = lw; g.stroke();
+      const a = Math.atan2(ey - my, ex - mx); g.beginPath(); g.moveTo(ex + Math.cos(a) * 4, ey + Math.sin(a) * 4); g.lineTo(ex - 5 * Math.cos(a - 0.5), ey - 5 * Math.sin(a - 0.5)); g.lineTo(ex - 5 * Math.cos(a + 0.5), ey - 5 * Math.sin(a + 0.5)); g.fillStyle = c; g.fill();
+    };
+    // edges
+    for (let o = 0; o < f.n; o++) {
+      if (f.st[o] === 3 || f.st[o] === 4) continue;
+      const hot = f.active === o && f.phase === 'mark', [x1, y1] = P(o);
+      for (const t of f.adj[o]) { const [x2, y2] = P(t), c = hot ? '#e6eaf3' : f.st[o] === 2 ? '#3d5a94' : '#2a3350'; edge(x1, y1, x2, y2, c, hot ? 2.2 : 1.2, 5); }
+    }
+    // roots
+    f.rootT.forEach((o, k) => {
+      const ry = Y(f.rootY(k)), rx = 26, skip = k === f.skipped, [x2, y2] = P(o);
+      T.rr(g, 4, ry - 12, 44, 24, 6, skip ? 'rgba(255,93,108,.15)' : '#17302f', skip ? C.bad : C.teal, 1.5);
+      T.text(g, 'R' + (k + 1) + (skip ? ' ✕' : ''), rx, ry, { size: 11.5, weight: 700, color: skip ? C.bad : C.teal, align: 'center' });
+      const crash = f.crash === o && k === 0;
+      if (skip) g.setLineDash([4, 4]);
+      edge(52 + rad, ry, x2, y2, crash ? C.bad : skip ? '#ff8d98' : '#2dd4bf', crash ? 3 : 1.8, 0);
+      g.setLineDash([]);
+    });
+    // nodes
+    for (let o = 0; o < f.n; o++) {
+      const [x, y] = P(o), [fill, stroke] = col(f.st[o]), act = f.active === o;
+      g.setLineDash(f.st[o] === 3 ? [3, 3] : []);
+      T.circle(g, x, y, rad, fill, stroke, act ? 3 : 1.6); g.setLineDash([]);
+      if (act) { g.beginPath(); g.arc(x, y, rad + 5, 0, 6.2832); g.strokeStyle = f.phase === 'sweep' ? (f.st[o] === 3 ? '#8b96b0' : f.st[o] === 4 ? C.bad : C.ok) : '#fff'; g.lineWidth = 1.5; g.stroke(); }
+      T.text(g, String(o), x, y, { size: rad > 12 ? 11.5 : 10, weight: 700, color: f.st[o] === 3 ? '#4a5578' : '#e6eaf3', align: 'center' });
+      if (f.crash === o) T.text(g, '💥', x, y - rad - 12, { size: 18, align: 'center' });
+    }
+    // legend + heap strip
+    const lg = [['unseen', 0], ['found', 1], ['scanned', 2], ['freed', 3], ['kept', 5], ['dangling', 4]]; let lx = 8;
+    lg.forEach(([name, s]) => { const [fl, sk] = col(s); T.circle(g, lx + 5, gy1 + 12, 5, fl, sk, 1.5); T.text(g, name, lx + 14, gy1 + 12, { size: 10.5, color: C.mut }); lx += small ? 58 : 76; });
+    T.text(g, 'HEAP (each block is one object, wider = bigger)', 8, gy1 + 34, { size: 9.5, weight: 700, color: '#566182' });
+    const total = f.size.reduce((a, b) => a + b, 0), hw = W - 16; let hx = 8;
+    for (let o = 0; o < f.n; o++) { const w = hw * f.size[o] / total, [fl, sk] = col(f.st[o]); T.rr(g, hx + 1, gy1 + 42, Math.max(2, w - 2), 20, 3, f.st[o] === 3 ? 'rgba(0,0,0,0)' : fl === '#232c45' ? '#2a3350' : fl, sk, 1); hx += w; }
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "id": "tcp",
+  "title": "How TCP congestion control works",
+  "sub": "A sender can't see the network, so it probes: double fast, then creep up, and halve the moment packets get dropped. Each step here is one round trip.",
+  "aria": "A chart of the TCP congestion window per round trip against the bottleneck capacity line",
+  "params": [
+    { "id": "cap", "label": "Bottleneck capacity (packets per round trip)", "min": 16, "max": 64, "step": 2, "value": 40 },
+    { "id": "ssthresh", "label": "Initial slow-start threshold", "min": 8, "max": 64, "step": 2, "value": 32 },
+    { "id": "loss", "label": "Random packet loss (per packet)", "min": 0, "max": 3, "step": 0.1, "value": 0 }
+  ],
+  "breakLabel": "💥 Break it: the sender ignores loss and never backs off",
+  "breakOff": "Normal run: TCP Reno-style. Slow start, then +1 per round trip, and halve on loss.",
+  "breakOn": "The sender keeps growing its window no matter what. Past capacity the buffer overflows, dropped packets get resent, and useful throughput collapses.",
+  "tags": ["networking", "protocols"],
+  "learn": [
+    "<b>Slow start</b> doubles the window every round trip, which is exponential, until it reaches the threshold. Then <b>congestion avoidance</b> adds one per round trip.",
+    "On loss the window is cut in half. The classic sawtooth is TCP probing for the capacity and backing off.",
+    "Raise the random loss slider: the connection never reaches capacity, because every loss halves the window.",
+    "Break it: with no backoff the link is overloaded, so goodput (useful data delivered) falls. Senders backing off is what stops the network from collapsing.",
+    "Simplified model: Reno-style, one step per round trip, and the collapse curve in Break it is illustrative, not measured."
+  ]
+}

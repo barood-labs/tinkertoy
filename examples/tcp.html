@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How TCP congestion control works · tinkertoy</title>
+<meta name="description" content="A sender can't see the network, so it probes: double fast, then creep up, and halve the moment packets get dropped. Each step here is one round trip.">
+<style>
+:root{--bg:#0b0e14;--panel:#131826;--panel2:#1a2133;--line:#262f45;--text:#e6eaf3;--mut:#8b96b0;--acc:#6ea8ff;--ok:#4ade80;--bad:#ff5d6c;--warn:#fbbf24;--pur:#b794f6;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.tt{max-width:1040px;margin:0 auto;padding:18px 14px 40px}
+.tt header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-bottom:12px}
+.tt h1{margin:0;font-size:1.45rem;letter-spacing:-.01em}
+.tt .sub{margin:0;color:var(--mut);flex:1 1 280px}
+.tt .back{color:var(--mut);font-size:.85rem;text-decoration:none;margin-right:auto;width:100%}
+.tt .back:hover{color:var(--acc)}
+.stage-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto;overflow-y:hidden;transition:border-color .2s,box-shadow .2s}
+.stage-wrap.broken{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad),0 0 28px rgba(255,93,108,.25)}
+#stage{display:block}
+.badge{position:sticky;left:0;float:right;margin:10px;padding:3px 10px;background:var(--bad);color:#fff;font-weight:700;font-size:.72rem;letter-spacing:.08em;border-radius:99px;z-index:2}
+.badge[hidden]{display:none}
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.stat{flex:1 1 110px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-width:0}
+.stat small{display:block;color:var(--mut);font-size:.68rem;text-transform:uppercase;letter-spacing:.07em}
+.stat b{font-size:1.1rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat.ok b{color:var(--ok)}.stat.bad b{color:var(--bad)}.stat.warn b{color:var(--warn)}
+.caption{min-height:3.1em;margin:6px 0 12px;padding:10px 14px;background:var(--panel2);border-left:3px solid var(--acc);border-radius:6px}
+.caption.bad{border-left-color:var(--bad)}
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.timeline #scrub{flex:1 1 220px;min-width:140px}
+#pos{color:var(--mut);font-variant-numeric:tabular-nums;font-size:.85rem;min-width:7.5em;text-align:right}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 13px;cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{background:#222c44;border-color:#34415f}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#play{min-width:92px;background:var(--acc);border-color:var(--acc);color:#07101f;font-weight:600}
+#play:hover{background:#8bbaff}
+.controls{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+@media(max-width:760px){.controls{grid-template-columns:1fr}.tt h1{font-size:1.2rem}}
+.params,.breakbox,.learn{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.params h2,.breakbox h2,.learn h2{margin:0 0 8px;font-size:.72rem;color:var(--mut);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+.param{display:grid;grid-template-columns:1fr auto;gap:2px 10px;margin:8px 0}
+.param label{color:var(--text)}
+.param output{color:var(--acc);font-variant-numeric:tabular-nums;font-weight:600}
+.param input{grid-column:1/-1}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px;margin:0;cursor:pointer}
+#break{width:100%;background:#2a1520;border-color:#5a2535;color:#ffb3bc;font-weight:600;text-align:left}
+#break:hover{background:#3a1b2a}
+#break[aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+#breakinfo{margin:8px 0 0;color:var(--mut);font-size:.88rem}
+.learn{margin-top:14px}
+.learn ul{margin:0;padding-left:1.1em;color:#c3cbe0}.learn li{margin:4px 0}
+.tt footer{margin-top:18px;color:var(--mut);font-size:.8rem}.tt footer a{color:var(--acc)}
+code{background:#1d2540;padding:1px 5px;border-radius:4px;font-size:.88em}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="tt">
+  <header>
+    <a class="back" href="../index.html">← all tinkertoys</a>
+    <h1>How TCP congestion control works</h1>
+    <p class="sub">A sender can't see the network, so it probes: double fast, then creep up, and halve the moment packets get dropped. Each step here is one round trip.</p>
+  </header>
+
+  <section class="stage-wrap" id="stagewrap">
+    <span class="badge" id="badge" hidden>BROKEN</span>
+    <canvas id="stage" role="img" aria-label="A chart of the TCP congestion window per round trip against the bottleneck capacity line"></canvas>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Live numbers"></section>
+  <p class="caption" id="caption" aria-live="polite"></p>
+
+  <section class="timeline" aria-label="Playback">
+    <button id="play" type="button">▶ Play</button>
+    <button id="back" type="button" aria-label="Step back">◀</button>
+    <button id="step" type="button" aria-label="Step forward">Step ▶</button>
+    <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Scrub the timeline">
+    <span id="pos"></span>
+    <button id="speed" type="button" aria-label="Playback speed">1×</button>
+  </section>
+
+  <div class="controls">
+    <section class="params" aria-label="Parameters">
+      <h2>Tweak it</h2>
+      <div class="param">
+        <label for="cap">Bottleneck capacity (packets per round trip)</label><output for="cap"></output>
+        <input type="range" id="cap" data-param min="16" max="64" step="2" value="40">
+      </div>
+      <div class="param">
+        <label for="ssthresh">Initial slow-start threshold</label><output for="ssthresh"></output>
+        <input type="range" id="ssthresh" data-param min="8" max="64" step="2" value="32">
+      </div>
+      <div class="param">
+        <label for="loss">Random packet loss (per packet)</label><output for="loss"></output>
+        <input type="range" id="loss" data-param min="0" max="3" step="0.1" value="0">
+      </div>
+    </section>
+    <section class="breakbox" aria-label="Failure mode">
+      <h2>Break it</h2>
+      <button id="break" type="button" aria-pressed="false">💥 Break it: the sender ignores loss and never backs off</button>
+      <p id="breakinfo">Normal run: TCP Reno-style. Slow start, then +1 per round trip, and halve on loss.</p>
+    </section>
+  </div>
+
+  <section class="learn">
+    <h2>What to notice</h2>
+    <ul>
+      <li><b>Slow start</b> doubles the window every round trip, which is exponential, until it reaches the threshold. Then <b>congestion avoidance</b> adds one per round trip.</li>
+      <li>On loss the window is cut in half. The classic sawtooth is TCP probing for the capacity and backing off.</li>
+      <li>Raise the random loss slider: the connection never reaches capacity, because every loss halves the window.</li>
+      <li>Break it: with no backoff the link is overloaded, so goodput (useful data delivered) falls. Senders backing off is what stops the network from collapsing.</li>
+      <li>Simplified model: Reno-style, one step per round trip, and the collapse curve in Break it is illustrative, not measured.</li>
+    </ul>
+  </section>
+  <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
+</main>
+<script>
+/* ===== tinkertoy runtime v0.1 (inline, no deps) ===== */
+const T = (() => {
+  const C = { bg:'#131826', panel:'#1a2133', line:'#2c3753', text:'#e6eaf3', mut:'#8b96b0', acc:'#6ea8ff', ok:'#4ade80', bad:'#ff5d6c', warn:'#fbbf24', pur:'#b794f6', teal:'#2dd4bf' };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const rng = seed => { let a = (seed >>> 0) || 1; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  const rr = (g, x, y, w, h, r, fill, stroke, lw) => { g.beginPath(); g.roundRect(x, y, w, h, r); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  const text = (g, s, x, y, o = {}) => { g.font = `${o.weight || 500} ${o.size || 13}px ${o.mono ? 'ui-monospace,Menlo,Consolas,monospace' : 'system-ui,-apple-system,Segoe UI,sans-serif'}`; g.fillStyle = o.color || C.text; g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'middle'; g.fillText(s, x, y); };
+  const line = (g, x1, y1, x2, y2, color, lw, dash) => { g.beginPath(); g.setLineDash(dash || []); g.moveTo(x1, y1); g.lineTo(x2, y2); g.strokeStyle = color || C.line; g.lineWidth = lw || 1; g.stroke(); g.setLineDash([]); };
+  const arrow = (g, x1, y1, x2, y2, color, lw) => { line(g, x1, y1, x2, y2, color, lw || 1.5); const a = Math.atan2(y2 - y1, x2 - x1), s = 7; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - s * Math.cos(a - 0.4), y2 - s * Math.sin(a - 0.4)); g.lineTo(x2 - s * Math.cos(a + 0.4), y2 - s * Math.sin(a + 0.4)); g.closePath(); g.fillStyle = color || C.line; g.fill(); };
+  const circle = (g, x, y, r, fill, stroke, lw) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.lineWidth = lw || 1; g.strokeStyle = stroke; g.stroke(); } };
+  return { C, clamp, lerp, ease, rng, hash, rr, text, line, arrow, circle };
+})();
+
+function Tinkertoy(cfg) {
+  const $ = id => document.getElementById(id);
+  const canvas = $('stage'), wrap = $('stagewrap'), g = canvas.getContext('2d');
+  const inputs = [...document.querySelectorAll('input[data-param]')];
+  const params = {}, fmt = cfg.fmt || {};
+  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '';
+  const SPEEDS = [0.5, 1, 2, 4];
+  const rate = cfg.rate || 2;
+
+  function readParams() { for (const el of inputs) { params[el.id] = +el.value; const o = document.querySelector(`output[for="${el.id}"]`); if (o) o.textContent = (fmt[el.id] || (v => v))(+el.value); } }
+  function saveHash() { try { const q = inputs.map(el => `${el.id}=${el.value}`); if (broken) q.push('break=1'); history.replaceState(null, '', '#' + q.join('&')); } catch (e) {} }
+  function loadHash() { try { const h = new URLSearchParams(location.hash.slice(1)); for (const el of inputs) if (h.has(el.id)) el.value = h.get(el.id); if (h.get('break') === '1') broken = true; } catch (e) {} }
+  function rebuild() {
+    readParams();
+    frames = cfg.build({ ...params }, broken);
+    n = frames.length;
+    $('scrub').max = String(n - 1);
+    pos = T.clamp(pos, 0, n - 1);
+    resize();
+  }
+  function resize() {
+    const w = wrap.clientWidth || 600; lastWrapW = w;
+    cssW = Math.max(w, cfg.minWidth || 0);
+    cssH = Math.round(cfg.height ? cfg.height(cssW, { params, frames }) : cssW * 0.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    render();
+  }
+  function cur() { const i = Math.min(n - 1, Math.max(0, Math.ceil(pos - 1e-9))); const t = i === 0 ? 1 : T.clamp(1 - (i - pos), 0, 1); return { i, t }; }
+  function render() {
+    const { i, t } = cur(), frame = frames[i], prev = frames[Math.max(0, i - 1)];
+    g.clearRect(0, 0, cssW, cssH); g.fillStyle = T.C.bg; g.fillRect(0, 0, cssW, cssH);
+    cfg.draw({ g, W: cssW, H: cssH, frame, prev, i, t, n, frames, p: params, broken, T, C: T.C });
+    $('scrub').value = String(pos);
+    $('pos').textContent = (cfg.posLabel ? cfg.posLabel(frame, i, n) : `step ${i + 1} / ${n}`);
+    const cap = $('caption'); cap.innerHTML = frame.msg || ''; cap.classList.toggle('bad', !!frame.bad);
+    const key = JSON.stringify(frame.stats || []);
+    if (key !== statKey) { statKey = key; $('stats').innerHTML = (frame.stats || []).map(([k, v, tone]) => `<div class="stat ${tone || ''}"><small>${k}</small><b>${v}</b></div>`).join(''); }
+    $('play').textContent = playing ? '⏸ Pause' : (pos >= n - 1 ? '↺ Replay' : '▶ Play');
+  }
+  function loop(ts) {
+    if (playing) {
+      const dt = Math.min(0.1, (ts - lastTs) / 1000); pos = Math.min(n - 1, pos + dt * rate * speed);
+      if (pos >= n - 1) playing = false;
+      render();
+    }
+    lastTs = ts; requestAnimationFrame(loop);
+  }
+  const play = () => { if (pos >= n - 1) pos = 0; playing = true; render(); };
+  const pause = () => { playing = false; render(); };
+  const seek = v => { pos = T.clamp(+v, 0, n - 1); render(); };
+  const setBreak = b => { broken = !!b; wrap.classList.toggle('broken', broken); $('break').setAttribute('aria-pressed', String(broken)); $('badge').hidden = !broken; $('breakinfo').innerHTML = broken ? cfg.breakOn || '' : cfg.breakOff || ''; const lb = $('break'); lb.textContent = broken ? '↩ Un-break it (restore normal behaviour)' : lb.dataset.label; rebuild(); saveHash(); };
+
+  $('break').dataset.label = $('break').textContent;
+  loadHash(); readParams();
+  $('play').onclick = () => (playing ? pause() : play());
+  $('step').onclick = () => { playing = false; seek(Math.floor(pos + 1e-9) + 1); };
+  $('back').onclick = () => { playing = false; seek(Math.ceil(pos - 1e-9) - 1); };
+  $('scrub').oninput = e => { playing = false; seek(e.target.value); };
+  $('speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('speed').textContent = speed + '×'; };
+  $('break').onclick = () => { setBreak(!broken); pos = 0; play(); };
+  inputs.forEach(el => el.addEventListener('input', () => { rebuild(); saveHash(); }));
+  addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input,button,select,textarea')) return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') $('step').click(); else if (e.key === 'ArrowLeft') $('back').click(); else if (e.key === 'b') $('break').click(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastWrapW) > 1) resize(); }).observe(wrap);
+  setBreak(broken);
+  requestAnimationFrame(loop);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches, auto = new URLSearchParams(location.search).get('autoplay') !== '0';
+  if (auto && !reduce) setTimeout(play, 350); else render();
+  window.tinkertoy = {
+    get steps() { return n; }, get state() { const { i, t } = cur(); return { pos, i, t, n, broken, playing, params: { ...params }, frame: frames[i] }; },
+    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); },
+    frames: () => frames
+  };
+}
+
+const PHASE = { ss: ['Slow start', '#6ea8ff'], ca: ['Congestion avoidance', '#4ade80'], fr: ['Fast recovery', '#fbbf24'], to: ['Timeout', '#ff5d6c'], ig: ['Ignoring loss', '#ff5d6c'] };
+Tinkertoy({
+  rate: 3,
+  breakOn: 'The sender keeps growing its window no matter what. Past capacity the buffer overflows, dropped packets get resent, and useful throughput collapses.',
+  breakOff: 'Normal run: TCP Reno-style. Slow start, then +1 per round trip, and halve on loss.',
+  fmt: { loss: v => v.toFixed(1) + ' %' },
+  build(p, broken) {
+    const R = 50, rnd = T.rng(11), frames = []; let cwnd = 1, ss = p.ssthresh, phase = 'ss', losses = 0, total = 0;
+    for (let r = 0; r < R; r++) {
+      const sent = cwnd, over = sent > p.cap, rl = p.loss > 0 && rnd() < 1 - Math.pow(1 - p.loss / 100, sent);
+      let delivered = over ? p.cap : sent, msg = '', ev = null, bad = false;
+      if (over && broken) delivered = Math.round(p.cap * Math.pow(p.cap / sent, 2));
+      else if (rl) delivered = Math.max(0, delivered - 1);
+      total += delivered;
+      const head = `Round trip ${r + 1}: sending <b>${sent}</b> packet${sent > 1 ? 's' : ''}. `;
+      if (broken) {
+        phase = over ? 'ig' : cwnd < ss ? 'ss' : 'ca';
+        if (over) { ev = 'loss'; losses++; bad = true; msg = head + `Capacity is ${p.cap}, so <b>${sent - p.cap}</b> packets are dropped. The sender <b>ignores</b> this and resends them on top of new data, so the useful goodput falls to <b>${delivered}</b>.`; }
+        else msg = head + (phase === 'ss' ? 'Slow start: window doubles.' : 'Congestion avoidance: +1.');
+        cwnd = cwnd < ss ? Math.min(cwnd * 2, Math.max(ss, cwnd + 1)) : cwnd + 1;
+        if (cwnd >= ss && phase === 'ss') phase = 'ca';
+      } else if (over || rl) {
+        ev = 'loss'; losses++;
+        const why = over ? `the bottleneck holds ${p.cap}, so <b>${sent - p.cap}</b> packets were dropped` : 'a packet was randomly lost';
+        if (sent >= 4) { ss = Math.max(2, Math.floor(cwnd / 2)); msg = head + `Loss: ${why}. Three duplicate ACKs → <b>fast retransmit</b>. Halve: ssthresh = cwnd = <b>${ss}</b>.`; cwnd = ss; phase = 'fr'; }
+        else { ss = Math.max(2, Math.floor(cwnd / 2)); msg = head + `Loss with too few packets in flight for duplicate ACKs → <b>timeout</b>. ssthresh = ${ss}, cwnd back to <b>1</b>.`; cwnd = 1; phase = 'to'; ev = 'timeout'; }
+        bad = true;
+      } else {
+        if (cwnd < ss) { msg = head + `<b>Slow start</b>: every ACK adds a packet, so the window <b>doubles</b>.`; phase = 'ss'; cwnd = Math.min(cwnd * 2, ss); if (cwnd >= ss) phase = 'ca'; }
+        else { msg = head + `<b>Congestion avoidance</b>: no loss, so add just <b>1</b> packet per round trip.`; phase = 'ca'; cwnd += 1; }
+      }
+      frames.push({ r, sent, ss: broken ? p.ssthresh : ss, phase, delivered, ev, bad, msg, cap: p.cap, stats: [['Window (cwnd)', sent], ['ssthresh', broken ? '–' : ss], ['Phase', PHASE[phase][0]], ['Goodput', delivered + ' / RTT', delivered < p.cap * 0.6 && r > 6 ? 'bad' : 'ok'], ['Loss events', losses, losses ? 'warn' : '']] });
+    }
+    const last = frames[R - 1]; last.msg += ` <i>Total delivered over ${R} round trips: <b>${total}</b> packets (the link could carry ${p.cap * R}).</i>`;
+    frames.forEach(f => (f.total = total));
+    return frames;
+  },
+  height: W => (W < 560 ? 330 : 400),
+  draw({ g, W, H, frame, prev, frames, i, t, p, T, C }) {
+    const L = 46, Rr = 16, Tp = 30, Bt = 48, cw = W - L - Rr, ch = H - Tp - Bt, N = frames.length;
+    const ymax = Math.ceil(Math.max(p.cap * 1.4, ...frames.map(f => f.sent)) * 1.02 / 20) * 20;
+    const X = r => L + (r / N) * cw, Y = v => Tp + ch - (v / ymax) * ch;
+    // grid + axis
+    for (let k = 0; k <= 4; k++) { const v = (ymax / 4) * k; T.line(g, L, Y(v), W - Rr, Y(v), '#1f2740'); T.text(g, String(Math.round(v)), L - 8, Y(v), { size: 11, color: C.mut, align: 'right' }); }
+    T.text(g, 'packets per round trip', L, 14, { size: 11, color: C.mut });
+    T.text(g, 'round trips →', W - Rr, H - 10, { size: 11, color: C.mut, align: 'right' });
+    // capacity + ssthresh
+    T.line(g, L, Y(p.cap), W - Rr, Y(p.cap), C.bad, 1.5, [6, 4]);
+    T.text(g, 'bottleneck capacity ' + p.cap, W - Rr - 4, Y(p.cap) - 9, { size: 11, color: C.bad, align: 'right', weight: 600 });
+    // bars: delivered (goodput) and cwnd
+    const bw = Math.max(2, cw / N - 2);
+    for (let k = 0; k <= i; k++) {
+      const f = frames[k], e = k === i ? T.ease(t) : 1, ph = PHASE[f.phase][1];
+      const sv = f.sent * e, dv = f.delivered * e;
+      g.globalAlpha = 0.28; T.rr(g, X(k), Y(sv), bw, Y(0) - Y(sv), 2, ph); g.globalAlpha = 1;
+      T.rr(g, X(k), Y(dv), bw, Math.max(0, Y(0) - Y(dv)), 2, C.teal);
+      if (k < i || t > 0.6) { g.fillStyle = ph; g.fillRect(X(k), H - Bt + 14, bw + 2, 7); }
+    }
+    // cwnd line
+    g.beginPath(); for (let k = 0; k <= i; k++) { const f = frames[k], e = k === i ? T.ease(t) : 1, x = X(k) + bw / 2, y = Y(f.sent * e); k ? g.lineTo(x, y) : g.moveTo(x, y); } g.strokeStyle = '#fff'; g.lineWidth = 2; g.lineJoin = 'round'; g.stroke();
+    // ssthresh
+    g.beginPath(); for (let k = 0; k <= i; k++) { const x = X(k) + bw / 2, y = Y(frames[k].ss); if (k) g.lineTo(x, Y(frames[k - 1].ss)); k ? g.lineTo(x, y) : g.moveTo(x, y); } g.setLineDash([3, 3]); g.strokeStyle = C.warn; g.lineWidth = 1.2; g.stroke(); g.setLineDash([]);
+    // loss markers
+    for (let k = 0; k <= i; k++) if (frames[k].ev) T.text(g, frames[k].ev === 'timeout' ? '⏱' : '✕', X(k) + bw / 2, Y(frames[k].sent) - 10, { size: 12, color: C.bad, align: 'center', weight: 700 });
+    // legend
+    let lx = L + 6; const ly = H - 18;
+    [['window (cwnd)', '#fff'], ['goodput delivered', C.teal], ['ssthresh', C.warn]].forEach(([s, c]) => { T.rr(g, lx, ly - 5, 14, 4, 2, c); T.text(g, s, lx + 20, ly - 3, { size: 11, color: C.mut }); lx += 28 + s.length * 6.3; });
+    T.text(g, PHASE[frame.phase][0], L + 4, Tp + 8, { size: 13, weight: 700, color: PHASE[frame.phase][1] });
+  }
+});
+</script>
+</body>
+</html>
