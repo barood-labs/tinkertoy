@@ -88,7 +88,7 @@ sims/*.js             one pure build(params, broken) -> frames[] and draw(ctx) p
 lib/ cli/             the zero-dependency Node CLI (init, validate)
 ```
 
-Each sim is a pure function from parameters to an array of frames, plus a function that draws one frame. The runtime supplies the sliders, the timeline, play/pause, speed, keyboard shortcuts and URL-hash state, so the agent only writes the part that is specific to the topic. `window.tinkertoy` exposes `seek`, `setParam`, `setBreak` and `frames()` so a sim can be tested or recorded without touching the UI.
+Each sim is a pure function from parameters to an array of frames, plus a function that draws one frame. The runtime supplies the sliders (slider drags are coalesced to at most one `build` per animation frame, so keep `build` cheap, under ~5 ms), the timeline, play/pause, speed, keyboard shortcuts and URL-hash state, so the agent only writes the part that is specific to the topic. `window.tinkertoy` exposes `seek`, `setParam`, `setBreak` and `frames()` so a sim can be tested or recorded without touching the UI.
 
 ## Develop
 

@@ -121,7 +121,7 @@ code{background:#1d2540;padding:1px 5px;border-radius:4px;font-size:.88em}
   <footer>Self-contained simulation made with <a href="https://github.com/barood-labs/tinkertoy">tinkertoy</a>. Keys: <code>space</code> play/pause · <code>←</code>/<code>→</code> step · <code>b</code> break. Simplified model, built to build intuition, not to be a spec.</footer>
 </main>
 <script>
-/* ===== tinkertoy runtime v0.1 (inline, no deps) ===== */
+/* ===== tinkertoy runtime v0.1.1 (inline, no deps) ===== */
 const T = (() => {
   const C = { bg:'#131826', panel:'#1a2133', line:'#2c3753', text:'#e6eaf3', mut:'#8b96b0', acc:'#6ea8ff', ok:'#4ade80', bad:'#ff5d6c', warn:'#fbbf24', pur:'#b794f6', teal:'#2dd4bf' };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -142,20 +142,30 @@ function Tinkertoy(cfg) {
   const canvas = $('stage'), wrap = $('stagewrap'), g = canvas.getContext('2d');
   const inputs = [...document.querySelectorAll('input[data-param]')];
   const params = {}, fmt = cfg.fmt || {};
-  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '';
+  let lastWrapW = 0, frames = [], n = 1, pos = 0, playing = false, broken = false, speed = 1, lastTs = 0, cssW = 0, cssH = 0, statKey = '', raf = 0, builds = 0, buildMs = 0;
   const SPEEDS = [0.5, 1, 2, 4];
   const rate = cfg.rate || 2;
 
   function readParams() { for (const el of inputs) { params[el.id] = +el.value; const o = document.querySelector(`output[for="${el.id}"]`); if (o) o.textContent = (fmt[el.id] || (v => v))(+el.value); } }
   function saveHash() { try { const q = inputs.map(el => `${el.id}=${el.value}`); if (broken) q.push('break=1'); history.replaceState(null, '', '#' + q.join('&')); } catch (e) {} }
   function loadHash() { try { const h = new URLSearchParams(location.hash.slice(1)); for (const el of inputs) if (h.has(el.id)) el.value = h.get(el.id); if (h.get('break') === '1') broken = true; } catch (e) {} }
+  // rebuild() is synchronous. Slider drags go through schedule() instead, which coalesces them.
   function rebuild() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; } // a pending coalesced build is superseded by this one
     readParams();
+    const t0 = performance.now();
     frames = cfg.build({ ...params }, broken);
+    buildMs = performance.now() - t0; builds++;
     n = frames.length;
     $('scrub').max = String(n - 1);
     pos = T.clamp(pos, 0, n - 1);
     resize();
+  }
+  // At most one build() per animation frame while a slider is dragged; the latest value wins
+  // because rebuild() reads the sliders when it runs. The value readouts update immediately.
+  function schedule() {
+    readParams();
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; rebuild(); saveHash(); });
   }
   function resize() {
     const w = wrap.clientWidth || 600; lastWrapW = w;
@@ -200,7 +210,7 @@ function Tinkertoy(cfg) {
   $('scrub').oninput = e => { playing = false; seek(e.target.value); };
   $('speed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('speed').textContent = speed + '×'; };
   $('break').onclick = () => { setBreak(!broken); pos = 0; play(); };
-  inputs.forEach(el => el.addEventListener('input', () => { rebuild(); saveHash(); }));
+  inputs.forEach(el => el.addEventListener('input', schedule));
   addEventListener('keydown', e => { if (e.target.closest && e.target.closest('input,button,select,textarea')) return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') $('step').click(); else if (e.key === 'ArrowLeft') $('back').click(); else if (e.key === 'b') $('break').click(); });
   if (window.ResizeObserver) new ResizeObserver(() => { if (Math.abs(wrap.clientWidth - lastWrapW) > 1) resize(); }).observe(wrap);
   setBreak(broken);
@@ -209,7 +219,8 @@ function Tinkertoy(cfg) {
   if (auto && !reduce) setTimeout(play, 350); else render();
   window.tinkertoy = {
     get steps() { return n; }, get state() { const { i, t } = cur(); return { pos, i, t, n, broken, playing, params: { ...params }, frame: frames[i] }; },
-    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { const el = $(id); el.value = v; el.dispatchEvent(new Event('input')); },
+    seek, play, pause, setBreak: b => { setBreak(b); pos = 0; render(); }, setParam(id, v) { $(id).value = v; rebuild(); saveHash(); }, // synchronous on purpose: tests need the frames right now
+    get builds() { return builds; }, get buildMs() { return buildMs; },
     frames: () => frames
   };
 }

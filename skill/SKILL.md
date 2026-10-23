@@ -49,7 +49,8 @@ Tinkertoy({
 - **A frame** is any object you like plus: `msg` (HTML caption for that step, one or two sentences that explain *what just happened and why*), `bad` (true paints the caption red), `stats` (an array of `[label, value, tone]` where tone is `ok`, `warn`, `bad` or empty; 3 to 5 cards).
 - **`draw`** gets `frame` (the settled frame at index `i`) and `t` in 0..1, the tween from frame `i-1` to `i`. Use `T.lerp(prev.x, frame.x, T.ease(t))` to animate. At integer scrub positions `t` is 1, so what you draw is exactly the frame.
 - **`T`** helpers: `T.rng(seed)` (seeded random), `T.hash(str)`, `T.lerp`, `T.ease`, `T.clamp`, `T.rr` (rounded rect), `T.text`, `T.line`, `T.arrow`, `T.circle`. **`C`** has the palette (`C.acc`, `C.ok`, `C.bad`, `C.warn`, `C.mut`, `C.teal`, `C.pur`, `C.text`).
-- The runtime provides play/pause, step, back, scrub, speed, keyboard shortcuts, URL-hash state and `window.tinkertoy` (`seek`, `setParam`, `setBreak`, `frames()`, `state`) for tests.
+- **`build` must be cheap.** The runtime calls `build(p, broken)` again whenever a slider moves, so a drag reruns it many times. Aim for under about 5 ms per call: no heavy loops, no big simulations, no nested loops over thousands of items. Keep it to 20 to 120 frames (a smooth real-time timeline can go up to about 200 if `build` stays trivially cheap). The runtime already coalesces slider input (at most one `build` per animation frame, latest value wins), but that only caps the rate; it cannot make one slow `build` fast.
+- The runtime provides play/pause, step, back, scrub, speed, keyboard shortcuts, URL-hash state and `window.tinkertoy` (`seek`, `setParam`, `setBreak`, `frames()`, `state`, `builds`, `buildMs`) for tests. `setParam` rebuilds synchronously, so tests can read the new frames on the next line.
 
 ### Parameters
 
@@ -75,7 +76,7 @@ These are checked by `tinkertoy validate`. Do not bend them.
 7. **Every frame explains itself.** The `msg` caption tells the reader what happened at this step and why, in plain language. A reader who never touches a slider should still learn from stepping through.
 8. **Readable at 390 px wide.** Keep the viewport meta. Use `minWidth` for wide diagrams instead of squashing them. Text on the canvas at least 10 px. Keep the template's controls: they are sized for touch.
 9. **Accessible basics.** Every slider has a `<label for>`. The canvas has an `aria-label` that says what it shows. Respect `prefers-reduced-motion` (the runtime skips autoplay).
-10. **Small and calm.** Under about 100 KB. 20 to 120 frames. Dark theme and the template's styles. No sound, no popups, no tracking.
+10. **Small, calm and cheap.** Under about 100 KB. 20 to 120 frames. `build()` under about 5 ms (it reruns on every slider move; the runtime coalesces drags to one build per frame, but a slow `build` still makes dragging janky). Dark theme and the template's styles. No sound, no popups, no tracking.
 
 ## Check your work
 

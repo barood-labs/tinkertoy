@@ -98,6 +98,43 @@ for (const m of manifest()) {
     } finally { await page.close(); }
   });
 
+  test(`${m.id}: a burst of slider input events is coalesced into one build per frame (latest value wins)`, { skip }, async () => {
+    const { page, errors } = await open(file);
+    try {
+      const r = await page.evaluate(async () => {
+        const t = window.tinkertoy, s = document.querySelector('input[data-param]');
+        const min = +s.min, max = +s.max, before = t.builds;
+        for (let k = 0; k < 50; k++) { s.value = String(min + ((max - min) * k) / 49); s.dispatchEvent(new Event('input', { bubbles: true })); }
+        const sync = t.builds - before; // nothing built synchronously from input events
+        await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const burst = t.builds - before;
+        const lastValue = t.state.params[s.id];
+        t.setParam(s.id, s.min); const afterSet = t.builds - before; // setParam stays synchronous
+        return { sync, burst, lastValue, max, afterSet, readout: document.querySelector(`output[for="${s.id}"]`).textContent !== '' };
+      });
+      assert.equal(r.sync, 0, 'input events do not build synchronously');
+      assert.equal(r.burst, 1, '50 input events -> exactly 1 build');
+      assert.equal(r.lastValue, r.max, 'latest value wins');
+      assert.equal(r.afterSet, r.burst + 1, 'setParam builds synchronously');
+      assert.ok(r.readout, 'value readout is updated');
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
+  test(`${m.id}: build() is cheap (few frames, well under 16 ms)`, { skip }, async () => {
+    const { page, errors } = await open(file);
+    try {
+      const r = await page.evaluate(() => {
+        const t = window.tinkertoy; let worst = t.buildMs, frames = t.steps;
+        for (const s of document.querySelectorAll('input[data-param]')) for (const v of [s.min, s.max]) { t.setParam(s.id, v); worst = Math.max(worst, t.buildMs); frames = Math.max(frames, t.steps); }
+        return { worst, frames };
+      });
+      assert.ok(r.frames >= 5 && r.frames <= 200, `frames ${r.frames}`);
+      assert.ok(r.worst < 16, `build took ${r.worst} ms`);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
+
   test(`${m.id}: no horizontal page overflow at 390px wide`, { skip }, async () => {
     const { page, errors } = await open(file, { width: 390, height: 800 });
     try {

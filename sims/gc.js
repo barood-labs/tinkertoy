@@ -17,8 +17,9 @@ Tinkertoy({
     // layout (unit square), roots pinned to the left
     const pos = Array.from({ length: n }, () => ({ x: 0.25 + rnd() * 0.7, y: 0.05 + rnd() * 0.9 }));
     const rootY = k => (R === 1 ? 0.5 : 0.12 + (0.76 * k) / (R - 1));
-    for (let it = 0; it < 300; it++) {
-      const f = pos.map(() => ({ x: 0, y: 0 })), cool = 1 - it / 320;
+    // 110 relaxation passes (was 300): build() reruns on every slider move, so the layout has to stay cheap
+    for (let it = 0; it < 110; it++) {
+      const f = pos.map(() => ({ x: 0, y: 0 })), cool = 1 - it / 117;
       for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) { let dx = pos[a].x - pos[b].x, dy = pos[a].y - pos[b].y; const d2 = dx * dx + dy * dy + 1e-4, d = Math.sqrt(d2), s = 0.0006 / d2; f[a].x += dx / d * s; f[a].y += dy / d * s; f[b].x -= dx / d * s; f[b].y -= dy / d * s; }
       for (let a = 0; a < n; a++) for (const b of adj[a]) { const dx = pos[b].x - pos[a].x, dy = pos[b].y - pos[a].y, d = Math.sqrt(dx * dx + dy * dy) + 1e-6, s = (d - 0.09) * 0.07; f[a].x += dx / d * s; f[a].y += dy / d * s; f[b].x -= dx / d * s; f[b].y -= dy / d * s; }
       rootT.forEach((o, k) => { f[o].x += (0.22 - pos[o].x) * 0.05; f[o].y += (rootY(k) - pos[o].y) * 0.03; });

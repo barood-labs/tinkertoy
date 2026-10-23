@@ -70,7 +70,7 @@ async function main(argv) {
     let bad = 0; const results = [];
     for (const f of o._) {
       const r = validateFile(f);
-      if (o.run && !r.errors.length) { const { runInBrowser } = await import('../lib/run.mjs'); const b = await runInBrowser(f); if (b.skipped) r.warnings.push('--run skipped: ' + b.reason); else r.errors.push(...b.errors); }
+      if (o.run && !r.errors.length) { const { runInBrowser } = await import('../lib/run.mjs'); const b = await runInBrowser(f); if (b.skipped) r.warnings.push('--run skipped: ' + b.reason); else { r.errors.push(...b.errors); r.warnings.push(...(b.warnings || [])); } }
       const fail = r.errors.length > 0 || (o.strict && r.warnings.length > 0);
       if (fail) bad++;
       results.push({ file: f, ok: !fail, ...r });

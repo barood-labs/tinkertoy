@@ -77,3 +77,9 @@ test('warns on a very large file', () => {
   const r = validateHtml(good.replace('</body>', `<!-- ${'x'.repeat(10)} --><script>/*${'y'.repeat(420 * 1024)}*/</script></body>`));
   assert.ok(r.warnings.some(w => /KB/.test(w)));
 });
+
+test('warns about a loop with a huge literal bound (build must be cheap), but not about small ones', () => {
+  const w = html => validateHtml(html).warnings.join('\n');
+  assert.match(w(good.replace('<script>', '<script>for (let i = 0; i < 200000; i++) {}')), /200000 iterations/);
+  assert.doesNotMatch(w(good.replace('<script>', '<script>for (let i = 0; i < 60; i++) {}')), /iterations/);
+});
