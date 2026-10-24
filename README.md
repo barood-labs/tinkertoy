@@ -3,6 +3,13 @@
 <p align="center"><b>Ask your coding agent how something works. Get a toy you can play with.</b><br>
 One self-contained HTML file: live sliders, a scrub bar, and a <i>Break it</i> button.</p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@barood-labs/tinkertoy"><img src="https://img.shields.io/npm/v/@barood-labs/tinkertoy?color=cb3837" alt="npm"></a>
+  <a href="https://github.com/barood-labs/tinkertoy/actions/workflows/test.yml"><img src="https://github.com/barood-labs/tinkertoy/actions/workflows/test.yml/badge.svg" alt="ci"></a>
+  <a href="https://barood-labs.github.io/tinkertoy/"><img src="https://img.shields.io/badge/gallery-live-brightgreen" alt="gallery"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
+</p>
+
 <p align="center"><img src="docs/hero.gif" alt="A TCP congestion-control simulation: scrubbing the timeline, dragging the capacity slider, then pressing Break it. Then a hash table growing and failing to resize." width="720"></p>
 
 <p align="center"><a href="https://barood-labs.github.io/tinkertoy/"><b>Open the gallery →</b></a> (live demos, no install)</p>
@@ -101,7 +108,7 @@ npm run shots      # docs/shots/*
 npm run hero       # docs/hero.gif (needs ffmpeg)
 ```
 
-The tests check that every example validates, builds deterministically and is byte-identical to a fresh build, that the sliders really change the output, that Break it changes it too and Restore returns it, and (in Chrome) that nothing logs a console error, nothing overflows at 390 px wide, and the gallery links to every example. The browser tests need Chrome at `/usr/bin/google-chrome` or `CHROME=/path/to/chrome`.
+The tests check that every example validates, builds deterministically and is byte-identical to a fresh build, that the sliders really change the output, that Break it changes it too and Restore returns it, and (in Chrome) that nothing logs a console error, nothing overflows at 390 px wide, and the gallery links to every example. The browser tests need **Node 20+** and Chrome at `/usr/bin/google-chrome` or `CHROME=/path/to/chrome`. The CLI itself still runs on Node 18.
 
 ## Gallery on GitHub Pages
 

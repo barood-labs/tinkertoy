@@ -8,8 +8,15 @@ import { root, manifest } from './helpers.mjs';
 
 let chromium = null, browser = null;
 const exe = findChrome();
-try { ({ chromium } = await import('playwright-core')); } catch { /* optional */ }
-const skip = !exe || !chromium ? 'Chrome or playwright-core not available' : false;
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+let skip = nodeMajor < 20 ? `Playwright needs Node 20+ (got ${process.versions.node})`
+  : !exe ? 'Chrome not available'
+  : false;
+if (!skip) {
+  try { ({ chromium } = await import('playwright-core')); }
+  catch (e) { skip = 'playwright-core not available: ' + (e?.message || e); }
+}
+if (!skip && !chromium) skip = 'Chrome or playwright-core not available';
 
 before(async () => { if (!skip) browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] }); });
 after(async () => { if (browser) await browser.close(); });

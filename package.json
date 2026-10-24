@@ -1,6 +1,6 @@
 {
   "name": "@barood-labs/tinkertoy",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "An agent skill that makes your coding agent answer \"how does X work\" with one self-contained, playable HTML simulation: sliders, a scrub bar and a break-it button.",
   "type": "module",
   "bin": { "tinkertoy": "cli/tinkertoy.mjs" },
